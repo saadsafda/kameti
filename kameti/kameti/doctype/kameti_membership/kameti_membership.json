@@ -1,0 +1,174 @@
+{
+ "actions": [],
+ "autoname": "MEM-.#####",
+ "creation": "2026-05-22 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "kameti",
+  "user",
+  "display_name",
+  "urdu_name",
+  "phone",
+  "initials",
+  "avatar_tone",
+  "section_break_role",
+  "role",
+  "status",
+  "joined_on",
+  "removed_on",
+  "column_break_role",
+  "payout_month",
+  "assignment_method"
+ ],
+ "fields": [
+  {
+   "fieldname": "kameti",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Kameti",
+   "options": "Kameti Committee",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "User",
+   "options": "User",
+   "search_index": 1
+  },
+  {
+   "fieldname": "display_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Display Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "urdu_name",
+   "fieldtype": "Data",
+   "label": "Urdu Name"
+  },
+  {
+   "fieldname": "phone",
+   "fieldtype": "Data",
+   "label": "Phone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "initials",
+   "fieldtype": "Data",
+   "label": "Initials",
+   "length": 2,
+   "reqd": 1
+  },
+  {
+   "default": "clay",
+   "fieldname": "avatar_tone",
+   "fieldtype": "Select",
+   "label": "Avatar Tone",
+   "options": "clay\nplum\nteal\ngreen\namber\nrust",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_role",
+   "fieldtype": "Section Break",
+   "label": "Role & Status"
+  },
+  {
+   "default": "member",
+   "fieldname": "role",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Role",
+   "options": "admin\nmember",
+   "reqd": 1
+  },
+  {
+   "default": "active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "active\nremoved",
+   "reqd": 1
+  },
+  {
+   "fieldname": "joined_on",
+   "fieldtype": "Datetime",
+   "label": "Joined On",
+   "reqd": 1
+  },
+  {
+   "fieldname": "removed_on",
+   "fieldtype": "Datetime",
+   "label": "Removed On"
+  },
+  {
+   "fieldname": "column_break_role",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "payout_month",
+   "fieldtype": "Int",
+   "label": "Payout Month",
+   "search_index": 1
+  },
+  {
+   "fieldname": "assignment_method",
+   "fieldtype": "Select",
+   "label": "Assignment Method",
+   "options": "\nmanual\nlucky_draw"
+  }
+ ],
+ "links": [],
+ "modified": "2026-05-22 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Kameti",
+ "name": "Kameti Membership",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 0,
+   "export": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Kameti Admin",
+   "share": 0,
+   "write": 1
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 0,
+   "role": "Kameti Member",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "display_name",
+ "track_changes": 1
+}

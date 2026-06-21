@@ -1,0 +1,123 @@
+{
+ "actions": [],
+ "autoname": "field:user",
+ "creation": "2026-05-22 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "phone",
+  "display_name",
+  "urdu_name",
+  "language",
+  "dark_mode",
+  "avatar_tone",
+  "avatar_image",
+  "fcm_token",
+  "last_active"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "phone",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Phone",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "display_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Display Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "urdu_name",
+   "fieldtype": "Data",
+   "label": "Urdu Name"
+  },
+  {
+   "default": "en",
+   "fieldname": "language",
+   "fieldtype": "Select",
+   "label": "Language",
+   "options": "en\nrom\nur",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "dark_mode",
+   "fieldtype": "Check",
+   "label": "Dark Mode"
+  },
+  {
+   "default": "clay",
+   "fieldname": "avatar_tone",
+   "fieldtype": "Select",
+   "label": "Avatar Tone",
+   "options": "clay\nplum\nteal\ngreen\namber\nrust",
+   "reqd": 1
+  },
+  {
+   "fieldname": "avatar_image",
+   "fieldtype": "Attach Image",
+   "label": "Avatar Image"
+  },
+  {
+   "fieldname": "fcm_token",
+   "fieldtype": "Data",
+   "label": "FCM Token"
+  },
+  {
+   "fieldname": "last_active",
+   "fieldtype": "Datetime",
+   "label": "Last Active"
+  }
+ ],
+ "links": [],
+ "modified": "2026-05-22 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Kameti",
+ "name": "Kameti Profile",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 0,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 0,
+   "role": "Kameti Member",
+   "share": 0,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

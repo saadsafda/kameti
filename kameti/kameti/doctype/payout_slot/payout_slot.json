@@ -1,0 +1,127 @@
+{
+ "actions": [],
+ "autoname": "PSL-.#####",
+ "creation": "2026-05-22 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "kameti",
+  "month_index",
+  "month_date",
+  "recipient",
+  "assignment_method",
+  "assigned_on",
+  "payout_amount",
+  "status",
+  "draw_audit"
+ ],
+ "fields": [
+  {
+   "fieldname": "kameti",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Kameti",
+   "options": "Kameti Committee",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "month_index",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Month Index",
+   "reqd": 1
+  },
+  {
+   "fieldname": "month_date",
+   "fieldtype": "Date",
+   "label": "Month Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "recipient",
+   "fieldtype": "Link",
+   "label": "Recipient",
+   "options": "Kameti Membership"
+  },
+  {
+   "fieldname": "assignment_method",
+   "fieldtype": "Select",
+   "label": "Assignment Method",
+   "options": "\nmanual\nlucky_draw"
+  },
+  {
+   "fieldname": "assigned_on",
+   "fieldtype": "Datetime",
+   "label": "Assigned On"
+  },
+  {
+   "fieldname": "payout_amount",
+   "fieldtype": "Currency",
+   "label": "Payout Amount",
+   "reqd": 1
+  },
+  {
+   "default": "upcoming",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "upcoming\ncurrent\npaid\nskipped",
+   "reqd": 1
+  },
+  {
+   "fieldname": "draw_audit",
+   "fieldtype": "Long Text",
+   "label": "Draw Audit"
+  }
+ ],
+ "links": [],
+ "modified": "2026-05-22 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Kameti",
+ "name": "Payout Slot",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 0,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "Kameti Admin",
+   "share": 0,
+   "write": 1
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 0,
+   "role": "Kameti Member",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "creation": "2026-06-03 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "delivery_section",
+  "provider",
+  "use_fixed_dev_code",
+  "fixed_dev_code",
+  "limits_section",
+  "otp_ttl_seconds",
+  "max_attempts",
+  "column_break_limits",
+  "resend_interval_seconds",
+  "hourly_limit"
+ ],
+ "fields": [
+  {
+   "fieldname": "delivery_section",
+   "fieldtype": "Section Break",
+   "label": "Delivery"
+  },
+  {
+   "default": "console",
+   "description": "console = store plaintext in Phone OTP doctype, skip sending. Switch to whatsapp/sms once provider credentials are configured.",
+   "fieldname": "provider",
+   "fieldtype": "Select",
+   "label": "Provider",
+   "options": "console\nwhatsapp\nsms",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "When on, every console-mode OTP uses the fixed code below (handy for app development). When off, a random 6-digit code is generated.",
+   "fieldname": "use_fixed_dev_code",
+   "fieldtype": "Check",
+   "label": "Use Fixed Dev Code"
+  },
+  {
+   "default": "472901",
+   "depends_on": "eval:doc.use_fixed_dev_code",
+   "fieldname": "fixed_dev_code",
+   "fieldtype": "Data",
+   "label": "Fixed Dev Code",
+   "length": 6
+  },
+  {
+   "fieldname": "limits_section",
+   "fieldtype": "Section Break",
+   "label": "Limits"
+  },
+  {
+   "default": "300",
+   "description": "How long a code is valid for, in seconds.",
+   "fieldname": "otp_ttl_seconds",
+   "fieldtype": "Int",
+   "label": "OTP TTL (seconds)",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "default": "5",
+   "description": "Lock the code after this many wrong tries.",
+   "fieldname": "max_attempts",
+   "fieldtype": "Int",
+   "label": "Max Attempts",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_limits",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "60",
+   "description": "Minimum seconds between consecutive OTP requests for the same phone.",
+   "fieldname": "resend_interval_seconds",
+   "fieldtype": "Int",
+   "label": "Resend Interval (seconds)",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "default": "5",
+   "description": "Maximum OTP requests per phone per hour.",
+   "fieldname": "hourly_limit",
+   "fieldtype": "Int",
+   "label": "Hourly Limit",
+   "non_negative": 1,
+   "reqd": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Kameti",
+ "name": "OTP Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 0,
+   "print": 0,
+   "read": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

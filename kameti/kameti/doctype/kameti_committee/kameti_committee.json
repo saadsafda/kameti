@@ -1,0 +1,227 @@
+{
+ "actions": [],
+ "autoname": "KAM-.#####",
+ "creation": "2026-05-22 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "urdu_title",
+  "short_code",
+  "tone",
+  "admin",
+  "section_break_config",
+  "members_count",
+  "installment_amount",
+  "start_month",
+  "duration_months",
+  "column_break_config",
+  "current_month",
+  "cycle_state",
+  "section_break_invite",
+  "invite_code",
+  "invite_expires_at",
+  "wa_template_id",
+  "archived"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "urdu_title",
+   "fieldtype": "Data",
+   "label": "Urdu Title"
+  },
+  {
+   "fieldname": "short_code",
+   "fieldtype": "Data",
+   "label": "Short Code",
+   "length": 2,
+   "reqd": 1
+  },
+  {
+   "default": "clay",
+   "fieldname": "tone",
+   "fieldtype": "Select",
+   "label": "Tone",
+   "options": "clay\nplum\nteal\ngreen\namber\nrust",
+   "reqd": 1
+  },
+  {
+   "fieldname": "admin",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Admin",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_config",
+   "fieldtype": "Section Break",
+   "label": "Configuration"
+  },
+  {
+   "fieldname": "members_count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Members Count",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "installment_amount",
+   "fieldtype": "Currency",
+   "label": "Installment Amount",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "start_month",
+   "fieldtype": "Date",
+   "label": "Start Month",
+   "reqd": 1
+  },
+  {
+   "fieldname": "duration_months",
+   "fieldtype": "Int",
+   "label": "Duration Months",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_config",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "current_month",
+   "fieldtype": "Int",
+   "label": "Current Month",
+   "reqd": 1
+  },
+  {
+   "default": "not_started",
+   "fieldname": "cycle_state",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Cycle State",
+   "options": "not_started\nactive\ncompleted",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_invite",
+   "fieldtype": "Section Break",
+   "label": "Invite"
+  },
+  {
+   "fieldname": "invite_code",
+   "fieldtype": "Data",
+   "label": "Invite Code",
+   "length": 6,
+   "reqd": 1,
+   "search_index": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "invite_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Invite Expires At"
+  },
+  {
+   "fieldname": "wa_template_id",
+   "fieldtype": "Data",
+   "label": "WA Template ID"
+  },
+  {
+   "default": "0",
+   "fieldname": "archived",
+   "fieldtype": "Check",
+   "label": "Archived"
+  }
+ ],
+ "links": [
+  {
+   "group": "Members",
+   "link_doctype": "Kameti Membership",
+   "link_fieldname": "kameti"
+  },
+  {
+   "group": "Members",
+   "link_doctype": "Payment Account",
+   "link_fieldname": "kameti"
+  },
+  {
+   "group": "Cycle",
+   "link_doctype": "Payout Slot",
+   "link_fieldname": "kameti"
+  },
+  {
+   "group": "Cycle",
+   "link_doctype": "Installment Payment",
+   "link_fieldname": "kameti"
+  },
+  {
+   "group": "Activity",
+   "link_doctype": "Reminder",
+   "link_fieldname": "kameti"
+  },
+  {
+   "group": "Activity",
+   "link_doctype": "Activity",
+   "link_fieldname": "kameti"
+  }
+ ],
+ "modified": "2026-05-22 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Kameti",
+ "name": "Kameti Committee",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Kameti Admin",
+   "share": 0,
+   "write": 1
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 0,
+   "role": "Kameti Member",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}

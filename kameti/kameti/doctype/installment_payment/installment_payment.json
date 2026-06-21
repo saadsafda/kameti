@@ -1,0 +1,180 @@
+{
+ "actions": [],
+ "autoname": "PAY-.#####",
+ "creation": "2026-05-22 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "kameti",
+  "payer",
+  "payout_month",
+  "amount",
+  "section_break_method",
+  "method",
+  "payment_account",
+  "transaction_id",
+  "column_break_method",
+  "receipt_file",
+  "voice_note",
+  "section_break_review",
+  "status",
+  "submitted_on",
+  "reviewed_by",
+  "reviewed_on",
+  "rejection_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "kameti",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Kameti",
+   "options": "Kameti Committee",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "payer",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Payer",
+   "options": "Kameti Membership",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "payout_month",
+   "fieldtype": "Int",
+   "label": "Payout Month",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_method",
+   "fieldtype": "Section Break",
+   "label": "Method"
+  },
+  {
+   "fieldname": "method",
+   "fieldtype": "Select",
+   "label": "Method",
+   "options": "easypaisa\njazzcash\nbank\ncash\nother",
+   "reqd": 1
+  },
+  {
+   "fieldname": "payment_account",
+   "fieldtype": "Link",
+   "label": "Payment Account",
+   "options": "Payment Account"
+  },
+  {
+   "fieldname": "transaction_id",
+   "fieldtype": "Data",
+   "label": "Transaction ID"
+  },
+  {
+   "fieldname": "column_break_method",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "receipt_file",
+   "fieldtype": "Attach Image",
+   "label": "Receipt File"
+  },
+  {
+   "fieldname": "voice_note",
+   "fieldtype": "Attach",
+   "label": "Voice Note"
+  },
+  {
+   "fieldname": "section_break_review",
+   "fieldtype": "Section Break",
+   "label": "Review"
+  },
+  {
+   "default": "pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "pending\napproved\nrejected",
+   "reqd": 1
+  },
+  {
+   "fieldname": "submitted_on",
+   "fieldtype": "Datetime",
+   "label": "Submitted On",
+   "reqd": 1
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User"
+  },
+  {
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed On"
+  },
+  {
+   "fieldname": "rejection_reason",
+   "fieldtype": "Small Text",
+   "label": "Rejection Reason"
+  }
+ ],
+ "links": [],
+ "modified": "2026-05-22 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Kameti",
+ "name": "Installment Payment",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 0,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Kameti Admin",
+   "share": 0,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 0,
+   "role": "Kameti Member",
+   "share": 0,
+   "write": 1
+  }
+ ],
+ "sort_field": "submitted_on",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
