@@ -12,6 +12,7 @@
   "assignment_method",
   "assigned_on",
   "payout_amount",
+  "is_split",
   "status",
   "draw_audit"
  ],
@@ -69,6 +70,12 @@
    "label": "Status",
    "options": "upcoming\ncurrent\npaid\nskipped",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_split",
+   "fieldtype": "Check",
+   "label": "Is Split"
   },
   {
    "fieldname": "draw_audit",

@@ -30,15 +30,79 @@ def get_member_dashboard(kameti: str):
 
 	due_on = _due_date(committee, cm)
 	days_left = date_diff(due_on, today()) if due_on else None
+
+	# Determine installment amount for this member (may be fractional for split slots)
+	installment_amount = committee.installment_amount
+	share_fraction = None
+	if cm:
+		slot_name = frappe.db.get_value(
+			"Payout Slot", {"kameti": kameti, "month_index": cm}, "name",
+		)
+		if slot_name:
+			share_fraction = frappe.db.get_value(
+				"Slot Share", {"payout_slot": slot_name, "membership": mem.name}, "share_fraction",
+			)
+			if share_fraction:
+				installment_amount = committee.installment_amount * share_fraction
+
 	status_label = "upcoming"
 	if cm:
 		status_label = existing.status if existing else "unpaid"
 
-	your_slot = frappe.db.get_value(
+	# Collect ALL payout slots this member is involved in:
+	# 1. Solo slot (recipient field)
+	# 2. Any split slots where they hold a Slot Share
+	your_payouts = []
+
+	solo_slot = frappe.db.get_value(
 		"Payout Slot",
 		{"kameti": kameti, "recipient": mem.name},
-		["month_index", "month_date", "payout_amount"], as_dict=True,
+		["name", "month_index", "month_date", "payout_amount"], as_dict=True,
 	)
+	if solo_slot:
+		your_payouts.append({
+			"month_index": solo_slot.month_index,
+			"month_label": (
+				formatdate(solo_slot.month_date, "MMM yyyy")
+				if solo_slot.month_date else None
+			),
+			"amount": solo_slot.payout_amount,
+			"is_split": False,
+			"share_fraction": None,
+		})
+
+	share_rows = frappe.get_all(
+		"Slot Share",
+		filters={"kameti": kameti, "membership": mem.name},
+		fields=["payout_slot", "share_fraction"],
+	)
+	for sr in share_rows:
+		slot_doc = frappe.db.get_value(
+			"Payout Slot", sr.payout_slot,
+			["month_index", "month_date", "payout_amount"], as_dict=True,
+		)
+		if slot_doc:
+			your_payouts.append({
+				"month_index": slot_doc.month_index,
+				"month_label": (
+					formatdate(slot_doc.month_date, "MMM yyyy")
+					if slot_doc.month_date else None
+				),
+				"amount": slot_doc.payout_amount * sr.share_fraction,
+				"is_split": True,
+				"share_fraction": sr.share_fraction,
+			})
+
+	# Sort by month so the nearest payout comes first
+	your_payouts.sort(key=lambda x: x["month_index"])
+
+	# Also compute total monthly obligation for this member across ALL slots
+	# (their own slot full amount + any co-holder fractions)
+	# This is informational — actual payment validation happens per-month in pay.py.
+	total_monthly_due = committee.installment_amount  # base: what all other members pay
+	# If they're a co-holder in any slot that is active this month, their share
+	# replaces/adds to the base. For display we show installment_amount for this month.
+	# The installment_amount shown is what they owe THIS month (already computed above).
 
 	return {
 		"you": {
@@ -48,22 +112,17 @@ def get_member_dashboard(kameti: str):
 			"tone": mem.avatar_tone,
 		},
 		"this_installment": {
-			"amount": committee.installment_amount,
+			"amount": installment_amount,
+			"share_fraction": share_fraction,
 			"status": status_label,
 			"due_on": due_on.isoformat() if due_on else None,
 			"days_left": days_left,
 			"existing_payment_id": existing.name if existing else None,
 		},
-		"your_payout": (
-			{
-				"month_index": your_slot.month_index,
-				"month_label": (
-					formatdate(your_slot.month_date, "MMM yyyy")
-					if your_slot.month_date else None
-				),
-				"amount": your_slot.payout_amount,
-			} if your_slot else None
-		),
+		# your_payout kept for backwards compat — first/nearest payout
+		"your_payout": your_payouts[0] if your_payouts else None,
+		# full list of all slots this member benefits from
+		"your_payouts": your_payouts,
 		"progress": {"current": cm, "total": committee.members_count},
 		"this_month_recipient": _recipient_card(kameti, cm),
 		"schedule_preview": _schedule_preview(kameti, cm),
@@ -80,10 +139,26 @@ def _build_admin(committee) -> dict:
 		filters={"kameti": kameti, "status": "active"},
 		fields=["name", "display_name", "initials", "avatar_tone", "user"],
 	)
+
+	# Get recipient(s) for current month
+	current_slot = None
+	slot_is_split = False
+	co_holder_ids: set[str] = set()
+	if cm:
+		current_slot = frappe.db.get_value(
+			"Payout Slot", {"kameti": kameti, "month_index": cm},
+			["name", "recipient", "is_split"], as_dict=True,
+		)
+		if current_slot and current_slot.is_split:
+			slot_is_split = True
+			co_holder_ids = set(frappe.get_all(
+				"Slot Share",
+				filters={"payout_slot": current_slot.name},
+				pluck="membership",
+			))
+
 	recipient_id = (
-		frappe.db.get_value(
-			"Payout Slot", {"kameti": kameti, "month_index": cm}, "recipient",
-		) if cm else None
+		current_slot.recipient if current_slot and not slot_is_split else None
 	)
 
 	latest_status: dict[str, str] = {}
@@ -97,6 +172,16 @@ def _build_admin(committee) -> dict:
 		for r in rows:
 			latest_status.setdefault(r.payer, r.status)
 
+	# Build share fraction map for current month's split slot
+	share_fractions: dict[str, float] = {}
+	if slot_is_split and current_slot:
+		for sh in frappe.get_all(
+			"Slot Share",
+			filters={"payout_slot": current_slot.name},
+			fields=["membership", "share_fraction"],
+		):
+			share_fractions[sh.membership] = sh.share_fraction
+
 	out_members = []
 	collected = 0
 	total_due = 0
@@ -105,7 +190,10 @@ def _build_admin(committee) -> dict:
 	non_recipient_count = 0
 
 	for m in members:
-		if m.name == recipient_id:
+		is_sole_recipient = (m.name == recipient_id)
+		is_co_holder = m.name in co_holder_ids
+
+		if is_sole_recipient:
 			out_members.append({
 				"membership_id": m.name,
 				"display_name": m.display_name,
@@ -115,9 +203,13 @@ def _build_admin(committee) -> dict:
 				"status": "receiver",
 			})
 			continue
+
 		non_recipient_count += 1
-		amount = committee.installment_amount
+		# Co-holders pay their fraction; regular members pay full amount
+		frac = share_fractions.get(m.name, 1.0) if is_co_holder else 1.0
+		amount = committee.installment_amount * frac
 		total_due += amount
+
 		raw = latest_status.get(m.name)
 		if raw == "approved":
 			status = "paid"
@@ -128,14 +220,19 @@ def _build_admin(committee) -> dict:
 		else:
 			status = "unpaid"
 			unpaid_ids.append(m.name)
-		out_members.append({
+
+		row = {
 			"membership_id": m.name,
 			"display_name": m.display_name,
 			"initials": m.initials,
 			"tone": m.avatar_tone,
 			"amount": amount,
 			"status": status,
-		})
+		}
+		if is_co_holder:
+			row["is_co_holder"] = True
+			row["share_fraction"] = frac
+		out_members.append(row)
 
 	due_on = _due_date(committee, cm)
 	cm_label = None
@@ -161,16 +258,42 @@ def _build_admin(committee) -> dict:
 	}
 
 
-def _recipient_card(kameti: str, cm: int) -> dict | None:
-	# Before the cycle starts (current_month == 0) preview month 1's recipient
-	# so a freshly-created kameti still shows its real roster.
+def _recipient_card(kameti: str, cm: int) -> dict | list | None:
 	month = cm or 1
 	slot = frappe.db.get_value(
 		"Payout Slot", {"kameti": kameti, "month_index": month},
-		["recipient", "payout_amount"], as_dict=True,
+		["name", "recipient", "payout_amount", "is_split"], as_dict=True,
 	)
-	if not slot or not slot.recipient:
+	if not slot:
 		return None
+
+	if slot.is_split:
+		shares = frappe.get_all(
+			"Slot Share",
+			filters={"payout_slot": slot.name},
+			fields=["membership", "share_fraction"],
+		)
+		cards = []
+		for sh in shares:
+			m = frappe.db.get_value(
+				"Kameti Membership", sh.membership,
+				["display_name", "initials", "avatar_tone"], as_dict=True,
+			)
+			if m:
+				cards.append({
+					"membership_id": sh.membership,
+					"display_name": m.display_name,
+					"initials": m.initials,
+					"tone": m.avatar_tone,
+					"amount": slot.payout_amount * sh.share_fraction,
+					"share_fraction": sh.share_fraction,
+					"is_co_holder": True,
+				})
+		return cards if cards else None
+
+	if not slot.recipient:
+		return None
+
 	m = frappe.db.get_value(
 		"Kameti Membership", slot.recipient,
 		["display_name", "initials", "avatar_tone"], as_dict=True,
@@ -194,29 +317,48 @@ def _due_date(committee, cm: int):
 
 
 def _schedule_preview(kameti: str, cm: int) -> list[dict]:
-	# Before the cycle starts (current_month == 0) preview from month 1 so a
-	# freshly-created kameti still shows its real upcoming schedule.
 	from_month = cm or 1
 	slots = frappe.get_all(
 		"Payout Slot",
 		filters={"kameti": kameti, "month_index": (">=", from_month)},
-		fields=["month_index", "recipient"],
+		fields=["name", "month_index", "recipient", "is_split"],
 		order_by="month_index asc",
 		limit=3,
 	)
 	out = []
 	for s in slots:
-		display_name = None
-		if s.recipient:
-			display_name = frappe.db.get_value(
-				"Kameti Membership", s.recipient, "display_name",
+		if s.is_split:
+			# Show first two co-holders
+			co_holders = frappe.get_all(
+				"Slot Share",
+				filters={"payout_slot": s.name},
+				fields=["membership"],
+				limit=2,
 			)
-		item = {
-			"month_index": s.month_index,
-			"membership_id": s.recipient,
-			"display_name": display_name,
-		}
-		# Only flag a row as "now" once the cycle is actually running.
+			names = []
+			for ch in co_holders:
+				dn = frappe.db.get_value("Kameti Membership", ch.membership, "display_name")
+				if dn:
+					names.append(dn)
+			display_name = " & ".join(names) if names else None
+			item = {
+				"month_index": s.month_index,
+				"membership_id": None,
+				"display_name": display_name,
+				"is_split": True,
+			}
+		else:
+			display_name = None
+			if s.recipient:
+				display_name = frappe.db.get_value(
+					"Kameti Membership", s.recipient, "display_name",
+				)
+			item = {
+				"month_index": s.month_index,
+				"membership_id": s.recipient,
+				"display_name": display_name,
+				"is_split": False,
+			}
 		if cm and s.month_index == cm:
 			item["label"] = "now"
 		out.append(item)

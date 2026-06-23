@@ -167,14 +167,23 @@ def remove(membership_id: str, reason: str | None = None):
 		slot = frappe.db.get_value(
 			"Payout Slot",
 			{"kameti": mem.kameti, "month_index": mem.payout_month},
-			"name",
+			["name", "is_split"], as_dict=True,
 		)
 		if slot:
-			frappe.db.set_value("Payout Slot", slot, {
-				"recipient": None,
-				"assignment_method": None,
-				"assigned_on": None,
-			})
+			if slot.is_split:
+				# Delegate to roster helper to handle reversion-to-single logic
+				from kameti.api.roster import remove_slot_share as _remove_share
+				_remove_share(
+					kameti=mem.kameti,
+					month_index=mem.payout_month,
+					membership_id=mem.name,
+				)
+			else:
+				frappe.db.set_value("Payout Slot", slot.name, {
+					"recipient": None,
+					"assignment_method": None,
+					"assigned_on": None,
+				})
 	frappe.db.commit()
 	return {"ok": True}
 
@@ -185,6 +194,16 @@ def assign_payout_month(membership_id: str, payout_month: int):
 	common.require_admin(mem.kameti)
 	payout_month = int(payout_month)
 
+	target_slot = frappe.db.get_value(
+		"Payout Slot",
+		{"kameti": mem.kameti, "month_index": payout_month},
+		["name", "recipient", "is_split"], as_dict=True,
+	)
+	if target_slot and target_slot.is_split:
+		frappe.throw(
+			"That slot is split between multiple members. Use split_slot to manage co-holders.",
+			frappe.ValidationError,
+		)
 	if frappe.db.exists(
 		"Kameti Membership",
 		{"kameti": mem.kameti, "payout_month": payout_month, "status": "active",
@@ -261,11 +280,21 @@ def _this_month_status(kameti: str, membership_id: str) -> str:
 	cm = frappe.db.get_value("Kameti Committee", kameti, "current_month")
 	if not cm:
 		return "unpaid"
-	slot_recipient = frappe.db.get_value(
-		"Payout Slot", {"kameti": kameti, "month_index": cm}, "recipient",
+	slot = frappe.db.get_value(
+		"Payout Slot", {"kameti": kameti, "month_index": cm},
+		["name", "recipient", "is_split"], as_dict=True,
 	)
-	if slot_recipient == membership_id:
-		return "receiver"
+	if slot:
+		if not slot.is_split and slot.recipient == membership_id:
+			return "receiver"
+		if slot.is_split:
+			is_co_holder = frappe.db.exists(
+				"Slot Share", {"payout_slot": slot.name, "membership": membership_id},
+			)
+			if is_co_holder:
+				# Co-holders are receivers AND still need to pay their share;
+				# show payment status rather than "receiver" so they know to pay.
+				pass
 	pay = frappe.db.get_value(
 		"Installment Payment",
 		{"kameti": kameti, "payer": membership_id, "payout_month": cm,

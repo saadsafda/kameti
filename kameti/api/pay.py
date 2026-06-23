@@ -4,6 +4,7 @@ import frappe
 from frappe.utils import now_datetime, pretty_date, time_diff_in_seconds
 
 from kameti.utils import common
+from kameti.api.roster import get_member_share_for_slot
 
 
 VALID_METHODS = ("easypaisa", "jazzcash", "bank", "cash", "other")
@@ -54,10 +55,30 @@ def submit_payment(
 	committee_amt = frappe.db.get_value(
 		"Kameti Committee", kameti, "installment_amount",
 	)
-	if committee_amt is None or abs(amount - float(committee_amt)) > 0.01:
-		frappe.throw(
-			"Amount must match the installment amount.", frappe.ValidationError,
-		)
+	if committee_amt is None:
+		frappe.throw("Installment amount not configured.", frappe.ValidationError)
+
+	# Check if this member has a fractional share in the slot for payout_month
+	slot_name = frappe.db.get_value(
+		"Payout Slot",
+		{"kameti": kameti, "month_index": payout_month},
+		"name",
+	)
+	share_fraction = None
+	if slot_name:
+		share_fraction = get_member_share_for_slot(slot_name, mem.name)
+
+	expected_amount = float(committee_amt) * (share_fraction if share_fraction else 1.0)
+	if abs(amount - expected_amount) > 0.01:
+		if share_fraction:
+			frappe.throw(
+				f"Amount must be {expected_amount:,.0f} (your {share_fraction * 100:.0f}% share of the installment).",
+				frappe.ValidationError,
+			)
+		else:
+			frappe.throw(
+				"Amount must match the installment amount.", frappe.ValidationError,
+			)
 
 	if frappe.db.exists(
 		"Installment Payment",
