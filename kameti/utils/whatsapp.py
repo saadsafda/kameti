@@ -1,10 +1,15 @@
 """WhatsApp delivery with a selectable backend.
 
-The backend is chosen by `whatsapp_provider` in `sites/<site>/site_config.json`:
+The backend is chosen by `whatsapp_backend` in the **OTP Settings** DocType
+(falls back to `whatsapp_provider` in site_config.json, then "meta"):
 
-  - "meta"   (default) — official Meta WhatsApp Cloud API. Template-based OTP.
-  - "vonage"           — Vonage Messages API, including the WhatsApp Sandbox.
-                         Free-form text (sandbox has no template approval).
+  - "meta"     (default) — official Meta WhatsApp Cloud API. Template-based OTP.
+  - "vonage"             — Vonage Messages API, including the WhatsApp Sandbox.
+                           Free-form text (sandbox has no template approval).
+  - "ultramsg"           — UltraMsg gateway (unofficial, QR-linked). Free-form
+                           text only. Convenient but the linked number can be
+                           banned by WhatsApp — not recommended as the sole
+                           production auth channel.
 
 In `developer_mode`, all sends are stubbed (code is logged, no HTTP call).
 
@@ -48,6 +53,20 @@ Setup for the Sandbox (https://dashboard.vonage.com/messages/sandbox):
 For production (not the sandbox), set `vonage_messages_url` to
 "https://api.nexmo.com/v1/messages". Basic Auth with the account API key/secret
 is what the sandbox uses; production also accepts it for the Messages API.
+
+----------------------------------------------------------------------------
+UltraMsg (whatsapp_backend = "ultramsg") — configured in the OTP Settings desk
+page (/app/otp-settings), NOT site_config.json:
+
+  - WhatsApp Backend:    ultramsg
+  - UltraMsg Instance ID: instance182401
+  - UltraMsg Token:       <instance token>   (stored encrypted)
+  - UltraMsg Base URL:    https://api.ultramsg.com
+  - UltraMsg Priority:    10
+
+Setup (https://user.ultramsg.com): create an instance, scan the QR with the
+WhatsApp account that will send messages, and copy the instance id + token.
+The OTP message is sent as free-form text via /messages/chat.
 """
 
 import base64
@@ -65,7 +84,12 @@ DEFAULT_OTP_LANG = "en"
 # ---- Vonage defaults ------------------------------------------------
 VONAGE_SANDBOX_URL = "https://messages-sandbox.nexmo.com/v1/messages"
 VONAGE_SANDBOX_FROM = "14157386102"
-VONAGE_OTP_MESSAGE = (
+
+# ---- UltraMsg defaults ----------------------------------------------
+ULTRAMSG_BASE_URL = "https://api.ultramsg.com"
+
+# Free-form OTP text shared by the text-only backends (vonage, ultramsg).
+OTP_TEXT_MESSAGE = (
 	"Your Kameti verification code is {code}. It is valid for 5 minutes. "
 	"Do not share it with anyone."
 )
@@ -73,8 +97,26 @@ VONAGE_OTP_MESSAGE = (
 HTTP_TIMEOUT_SECONDS = 10
 
 
+def _settings():
+	"""OTP Settings Single doc, or None before it has been migrated."""
+	try:
+		return frappe.get_cached_doc("OTP Settings")
+	except Exception:
+		return None
+
+
 def _provider() -> str:
-	return (frappe.conf.get("whatsapp_provider") or "meta").lower()
+	"""WhatsApp backend: OTP Settings.whatsapp_backend wins, then site_config,
+	then 'meta'."""
+	doc = _settings()
+	backend = getattr(doc, "whatsapp_backend", None) if doc else None
+	if not backend:
+		backend = frappe.conf.get("whatsapp_provider")
+	return (backend or "meta").lower()
+
+
+def _otp_text(code: str) -> str:
+	return (frappe.conf.get("whatsapp_otp_message") or OTP_TEXT_MESSAGE).format(code=code)
 
 
 # ---- public API -----------------------------------------------------
@@ -89,12 +131,12 @@ def send_otp(phone: str, code: str) -> dict:
 		frappe.logger("kameti").info(f"[DEV-WA-OTP] {phone}: code={code}")
 		return {"provider_id": "dev", "status": "sent"}
 
-	if _provider() == "vonage":
+	provider = _provider()
+	if provider == "vonage":
 		# Sandbox has no OTP template — deliver the code as free-form text.
-		message = (
-			frappe.conf.get("vonage_otp_message") or VONAGE_OTP_MESSAGE
-		).format(code=code)
-		return _vonage_send_text(phone, message)
+		return _vonage_send_text(phone, _otp_text(code))
+	if provider == "ultramsg":
+		return _ultramsg_send_text(phone, _otp_text(code))
 
 	return _meta_send_otp(phone, code)
 
@@ -110,8 +152,11 @@ def send_text(phone: str, body: str) -> dict:
 		frappe.logger("kameti").info(f"[DEV-WA-TEXT] {phone}: {body}")
 		return {"provider_id": "dev", "status": "sent"}
 
-	if _provider() == "vonage":
+	provider = _provider()
+	if provider == "vonage":
 		return _vonage_send_text(phone, body)
+	if provider == "ultramsg":
+		return _ultramsg_send_text(phone, body)
 
 	return _meta_send_text(phone, body)
 
@@ -133,10 +178,10 @@ def send_template(
 		)
 		return {"provider_id": "dev", "status": "sent"}
 
-	if _provider() == "vonage":
+	if _provider() in ("vonage", "ultramsg"):
 		frappe.throw(
-			"WhatsApp templates are not supported on the Vonage backend "
-			"(the Sandbox sends free-form text only). Use send_text instead, "
+			"WhatsApp templates are only supported on the Meta backend. The "
+			"vonage/ultramsg backends send free-form text only — use send_text, "
 			"or switch whatsapp_provider to 'meta' for approved templates."
 		)
 
@@ -319,5 +364,68 @@ def _vonage_post(payload: dict, cfg: dict) -> dict:
 	data = response.json()
 	return {
 		"provider_id": data.get("message_uuid"),
+		"status": "sent",
+	}
+
+
+# ---- UltraMsg backend ----------------------------------------------
+
+def _ultramsg_send_text(phone: str, body: str) -> dict:
+	cfg = _ultramsg_config()
+	# UltraMsg accepts E.164 with or without the leading '+'; keep it as-is.
+	payload = {
+		"token": cfg["token"],
+		"to": phone,
+		"body": body,
+		"priority": cfg["priority"],
+	}
+	return _ultramsg_post(payload, cfg)
+
+
+def _ultramsg_config() -> dict:
+	doc = _settings()
+	if not doc:
+		frappe.throw("OTP Settings is not available. Run `bench migrate` first.")
+	instance_id = getattr(doc, "ultramsg_instance_id", None)
+	token = doc.get_password("ultramsg_token", raise_exception=False)
+	if not instance_id or not token:
+		frappe.throw(
+			"UltraMsg is not configured. Set the UltraMsg Instance ID and Token "
+			"in OTP Settings."
+		)
+	base_url = (getattr(doc, "ultramsg_base_url", None) or ULTRAMSG_BASE_URL).rstrip("/")
+	return {
+		"token": token,
+		"priority": getattr(doc, "ultramsg_priority", None) or 10,
+		"url": f"{base_url}/{instance_id}/messages/chat",
+	}
+
+
+def _ultramsg_post(payload: dict, cfg: dict) -> dict:
+	try:
+		response = requests.post(
+			cfg["url"],
+			data=payload,
+			timeout=HTTP_TIMEOUT_SECONDS,
+		)
+	except requests.RequestException as e:
+		frappe.logger("kameti").error(f"WhatsApp (ultramsg) network error: {e}")
+		raise
+
+	if not response.ok:
+		frappe.logger("kameti").error(
+			f"WhatsApp (ultramsg) HTTP error {response.status_code}: {response.text}"
+		)
+		response.raise_for_status()
+
+	data = response.json()
+	# UltraMsg returns {"sent": "true", "message": "ok", "id": <int>} on success
+	# or {"error": "..."} on failure (often with HTTP 200).
+	if data.get("error"):
+		frappe.logger("kameti").error(f"WhatsApp (ultramsg) API error: {data['error']}")
+		frappe.throw(f"UltraMsg send failed: {data['error']}")
+
+	return {
+		"provider_id": data.get("id"),
 		"status": "sent",
 	}

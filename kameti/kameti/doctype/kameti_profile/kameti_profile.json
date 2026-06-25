@@ -75,7 +75,7 @@
   },
   {
    "fieldname": "fcm_token",
-   "fieldtype": "Data",
+   "fieldtype": "Small Text",
    "label": "FCM Token"
   },
   {

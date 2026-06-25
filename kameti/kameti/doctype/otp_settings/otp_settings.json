@@ -13,7 +13,13 @@
   "max_attempts",
   "column_break_limits",
   "resend_interval_seconds",
-  "hourly_limit"
+  "hourly_limit",
+  "whatsapp_section",
+  "whatsapp_backend",
+  "ultramsg_instance_id",
+  "ultramsg_token",
+  "ultramsg_base_url",
+  "ultramsg_priority"
  ],
  "fields": [
   {
@@ -89,6 +95,50 @@
    "label": "Hourly Limit",
    "non_negative": 1,
    "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.provider=='whatsapp'",
+   "fieldname": "whatsapp_section",
+   "fieldtype": "Section Break",
+   "label": "WhatsApp"
+  },
+  {
+   "default": "meta",
+   "depends_on": "eval:doc.provider=='whatsapp'",
+   "description": "Which WhatsApp backend to send through. meta = official Cloud API (templates). vonage / ultramsg = free-form text only.",
+   "fieldname": "whatsapp_backend",
+   "fieldtype": "Select",
+   "label": "WhatsApp Backend",
+   "options": "meta\nvonage\nultramsg"
+  },
+  {
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='ultramsg'",
+   "description": "UltraMsg instance id, e.g. instance182401.",
+   "fieldname": "ultramsg_instance_id",
+   "fieldtype": "Data",
+   "label": "UltraMsg Instance ID"
+  },
+  {
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='ultramsg'",
+   "description": "UltraMsg instance token.",
+   "fieldname": "ultramsg_token",
+   "fieldtype": "Password",
+   "label": "UltraMsg Token"
+  },
+  {
+   "default": "https://api.ultramsg.com",
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='ultramsg'",
+   "fieldname": "ultramsg_base_url",
+   "fieldtype": "Data",
+   "label": "UltraMsg Base URL"
+  },
+  {
+   "default": "10",
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='ultramsg'",
+   "description": "Message priority (1-10).",
+   "fieldname": "ultramsg_priority",
+   "fieldtype": "Int",
+   "label": "UltraMsg Priority"
   }
  ],
  "issingle": 1,

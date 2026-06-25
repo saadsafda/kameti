@@ -40,6 +40,9 @@ doc_events = {
 	"User": {
 		"after_insert": "kameti.api.profile.ensure_profile_for_user",
 	},
+	"Activity": {
+		"after_insert": "kameti.utils.push.send_for_activity",
+	},
 }
 
 # Scheduled Tasks
