@@ -5,3 +5,5 @@
 tags
 node_modules
 __pycache__
+# Firebase credentials
+kameti/utils/firebase_credentials.json
