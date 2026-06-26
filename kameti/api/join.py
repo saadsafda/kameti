@@ -59,12 +59,10 @@ def lookup_invite(code: str):
 
 
 @frappe.whitelist(methods=["POST"])
-def join_by_code(code: str, display_name: str):
+def join_by_code(code: str, display_name: str = None):
 	user = common.require_session_user()
 	if not code:
 		frappe.throw("Invite code is required.", frappe.ValidationError)
-	if not display_name or not display_name.strip():
-		frappe.throw("Display name is required.", frappe.ValidationError)
 
 	code = code.strip().upper()
 	committee = frappe.db.get_value(
@@ -94,9 +92,11 @@ def join_by_code(code: str, display_name: str):
 
 	profile = frappe.db.get_value(
 		"Kameti Profile", {"user": user},
-		["urdu_name", "phone", "avatar_tone"], as_dict=True,
-	) or frappe._dict(urdu_name=None, phone="", avatar_tone="clay")
+		["display_name", "urdu_name", "phone", "avatar_tone"], as_dict=True,
+	) or frappe._dict(display_name=None, urdu_name=None, phone="", avatar_tone="clay")
 
+	if not display_name or not display_name.strip():
+		display_name = profile.display_name or frappe.db.get_value("User", user, "full_name") or user
 	display_name = display_name.strip()[:60]
 	mem = frappe.new_doc("Kameti Membership")
 	mem.kameti = committee.name

@@ -805,6 +805,16 @@ Open in the desk: `/app/otp-settings`. Fields:
 | `max_attempts` | Int | 5 | Lockout after this many wrong tries |
 | `resend_interval_seconds` | Int | 60 | Minimum gap between two `request_otp` for the same phone |
 | `hourly_limit` | Int | 5 | Maximum `request_otp` per phone per hour |
+| `whatsapp_backend` | Select | `meta` | `meta` / `vonage` / `ultramsg` |
+| `whatsapp_phone_number_id` | Data |  | Meta Cloud API phone number ID |
+| `whatsapp_access_token` | Password |  | Meta Cloud API access token |
+| `whatsapp_api_version` | Data | `v18.0` | Meta Graph API version |
+| `whatsapp_otp_template_name` | Data | `kameti_otp` | Meta OTP template name |
+| `whatsapp_otp_template_lang` | Data | `en` | Meta OTP template language |
+| `ultramsg_instance_id` | Data |  | UltraMsg instance ID |
+| `ultramsg_token` | Password |  | UltraMsg instance token |
+| `ultramsg_base_url` | Data | `https://api.ultramsg.com` | UltraMsg API base URL |
+| `ultramsg_priority` | Int | `10` | UltraMsg message priority |
 
 In `console` mode the plaintext lives in `Phone OTP.code` — readable at `/app/phone-otp`.
 

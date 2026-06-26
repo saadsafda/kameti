@@ -16,6 +16,11 @@
   "hourly_limit",
   "whatsapp_section",
   "whatsapp_backend",
+  "whatsapp_phone_number_id",
+  "whatsapp_access_token",
+  "whatsapp_api_version",
+  "whatsapp_otp_template_name",
+  "whatsapp_otp_template_lang",
   "ultramsg_instance_id",
   "ultramsg_token",
   "ultramsg_base_url",
@@ -105,11 +110,49 @@
   {
    "default": "meta",
    "depends_on": "eval:doc.provider=='whatsapp'",
-   "description": "Which WhatsApp backend to send through. meta = official Cloud API (templates). vonage / ultramsg = free-form text only.",
+   "description": "Which WhatsApp backend to send through. meta = official Cloud API (configure the fields below). vonage / ultramsg = free-form text only.",
    "fieldname": "whatsapp_backend",
    "fieldtype": "Select",
    "label": "WhatsApp Backend",
    "options": "meta\nvonage\nultramsg"
+  },
+  {
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='meta'",
+   "description": "Meta Cloud API phone_number_id from the WhatsApp app.",
+   "fieldname": "whatsapp_phone_number_id",
+   "fieldtype": "Data",
+   "label": "WhatsApp Phone Number ID"
+  },
+  {
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='meta'",
+   "description": "Meta Cloud API access token. Stored encrypted.",
+   "fieldname": "whatsapp_access_token",
+   "fieldtype": "Password",
+   "label": "WhatsApp Access Token"
+  },
+  {
+   "default": "v18.0",
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='meta'",
+   "description": "Graph API version to call.",
+   "fieldname": "whatsapp_api_version",
+   "fieldtype": "Data",
+   "label": "WhatsApp API Version"
+  },
+  {
+   "default": "kameti_otp",
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='meta'",
+   "description": "Approved template name used for OTP messages.",
+   "fieldname": "whatsapp_otp_template_name",
+   "fieldtype": "Data",
+   "label": "WhatsApp OTP Template Name"
+  },
+  {
+   "default": "en",
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='meta'",
+   "description": "Template language code.",
+   "fieldname": "whatsapp_otp_template_lang",
+   "fieldtype": "Data",
+   "label": "WhatsApp OTP Template Language"
   },
   {
    "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='ultramsg'",
@@ -143,7 +186,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-06-03 00:00:00",
+ "modified": "2026-06-27 00:00:00",
  "modified_by": "Administrator",
  "module": "Kameti",
  "name": "OTP Settings",

@@ -1,7 +1,7 @@
 """WhatsApp delivery with a selectable backend.
 
 The backend is chosen by `whatsapp_backend` in the **OTP Settings** DocType
-(falls back to `whatsapp_provider` in site_config.json, then "meta"):
+(legacy `whatsapp_provider` site_config fallback is still accepted):
 
   - "meta"     (default) — official Meta WhatsApp Cloud API. Template-based OTP.
   - "vonage"             — Vonage Messages API, including the WhatsApp Sandbox.
@@ -14,16 +14,14 @@ The backend is chosen by `whatsapp_backend` in the **OTP Settings** DocType
 In `developer_mode`, all sends are stubbed (code is logged, no HTTP call).
 
 ----------------------------------------------------------------------------
-Meta Cloud API config (whatsapp_provider = "meta"):
+Meta Cloud API config (store in OTP Settings, backend = "meta"):
 
-  {
-    "whatsapp_provider":           "meta",
-    "whatsapp_phone_number_id":    "1234567890",
-    "whatsapp_access_token":       "EAAG...",
-    "whatsapp_api_version":        "v18.0",
-    "whatsapp_otp_template_name":  "kameti_otp",
-    "whatsapp_otp_template_lang":  "en"
-  }
+  OTP Settings fields:
+    - whatsapp_phone_number_id
+    - whatsapp_access_token
+    - whatsapp_api_version
+    - whatsapp_otp_template_name
+    - whatsapp_otp_template_lang
 
 Setup (one-time, in Meta Business Manager):
   1. Create a Meta Business Account + WhatsApp Business app.
@@ -182,7 +180,7 @@ def send_template(
 		frappe.throw(
 			"WhatsApp templates are only supported on the Meta backend. The "
 			"vonage/ultramsg backends send free-form text only — use send_text, "
-			"or switch whatsapp_provider to 'meta' for approved templates."
+			"or set OTP Settings.whatsapp_backend to 'meta' for approved templates."
 		)
 
 	return _meta_send_template(phone, template_name, language, body_params)
@@ -254,24 +252,39 @@ def _meta_send_template(
 
 
 def _meta_config() -> dict:
+	doc = _settings()
 	conf = frappe.conf
-	phone_number_id = conf.get("whatsapp_phone_number_id")
-	access_token = conf.get("whatsapp_access_token")
+	phone_number_id = getattr(doc, "whatsapp_phone_number_id", None) if doc else None
+	access_token = (
+		doc.get_password("whatsapp_access_token", raise_exception=False) if doc else None
+	)
+	api_version = getattr(doc, "whatsapp_api_version", None) if doc else None
+	otp_template_name = getattr(doc, "whatsapp_otp_template_name", None) if doc else None
+	otp_template_lang = getattr(doc, "whatsapp_otp_template_lang", None) if doc else None
+
+	# Legacy site_config fallback keeps existing sites working until they move
+	# the values into OTP Settings.
+	if not phone_number_id:
+		phone_number_id = conf.get("whatsapp_phone_number_id")
+	if not access_token:
+		access_token = conf.get("whatsapp_access_token")
+	if not api_version:
+		api_version = conf.get("whatsapp_api_version")
+	if not otp_template_name:
+		otp_template_name = conf.get("whatsapp_otp_template_name")
+	if not otp_template_lang:
+		otp_template_lang = conf.get("whatsapp_otp_template_lang")
 	if not phone_number_id or not access_token:
 		frappe.throw(
 			"WhatsApp Cloud API is not configured. Set "
-			"whatsapp_phone_number_id and whatsapp_access_token in site_config.json."
+			"whatsapp_phone_number_id and whatsapp_access_token in OTP Settings."
 		)
 	return {
 		"phone_number_id": phone_number_id,
 		"access_token": access_token,
-		"api_version": conf.get("whatsapp_api_version") or META_DEFAULT_VERSION,
-		"otp_template_name": (
-			conf.get("whatsapp_otp_template_name") or DEFAULT_OTP_TEMPLATE
-		),
-		"otp_template_lang": (
-			conf.get("whatsapp_otp_template_lang") or DEFAULT_OTP_LANG
-		),
+		"api_version": api_version or META_DEFAULT_VERSION,
+		"otp_template_name": otp_template_name or DEFAULT_OTP_TEMPLATE,
+		"otp_template_lang": otp_template_lang or DEFAULT_OTP_LANG,
 	}
 
 
