@@ -24,7 +24,10 @@
   "ultramsg_instance_id",
   "ultramsg_token",
   "ultramsg_base_url",
-  "ultramsg_priority"
+  "ultramsg_priority",
+  "openwaapi_base_url",
+  "openwaapi_api_key",
+  "openwaapi_session_id"
  ],
  "fields": [
   {
@@ -110,11 +113,11 @@
   {
    "default": "meta",
    "depends_on": "eval:doc.provider=='whatsapp'",
-   "description": "Which WhatsApp backend to send through. meta = official Cloud API (configure the fields below). vonage / ultramsg = free-form text only.",
+   "description": "Which WhatsApp backend to send through. meta = official Cloud API. vonage / ultramsg / openwaapi send free-form text.",
    "fieldname": "whatsapp_backend",
    "fieldtype": "Select",
    "label": "WhatsApp Backend",
-   "options": "meta\nvonage\nultramsg"
+   "options": "meta\nvonage\nultramsg\nopenwaapi"
   },
   {
    "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='meta'",
@@ -182,6 +185,28 @@
    "fieldname": "ultramsg_priority",
    "fieldtype": "Int",
    "label": "UltraMsg Priority"
+  },
+  {
+   "default": "https://openwaapi.danerp.tech/api",
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='openwaapi'",
+   "description": "OpenWA API base URL. You can paste it with or without the trailing /api.",
+   "fieldname": "openwaapi_base_url",
+   "fieldtype": "Data",
+   "label": "OpenWA API Base URL"
+  },
+  {
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='openwaapi'",
+   "description": "OpenWA API key. Stored encrypted.",
+   "fieldname": "openwaapi_api_key",
+   "fieldtype": "Password",
+   "label": "OpenWA API Key"
+  },
+  {
+   "depends_on": "eval:doc.provider=='whatsapp' && doc.whatsapp_backend=='openwaapi'",
+   "description": "Connected OpenWA session ID/name used to send OTPs.",
+   "fieldname": "openwaapi_session_id",
+   "fieldtype": "Data",
+   "label": "OpenWA Session ID"
   }
  ],
  "issingle": 1,

@@ -805,7 +805,7 @@ Open in the desk: `/app/otp-settings`. Fields:
 | `max_attempts` | Int | 5 | Lockout after this many wrong tries |
 | `resend_interval_seconds` | Int | 60 | Minimum gap between two `request_otp` for the same phone |
 | `hourly_limit` | Int | 5 | Maximum `request_otp` per phone per hour |
-| `whatsapp_backend` | Select | `meta` | `meta` / `vonage` / `ultramsg` |
+| `whatsapp_backend` | Select | `meta` | `meta` / `vonage` / `ultramsg` / `openwaapi` |
 | `whatsapp_phone_number_id` | Data |  | Meta Cloud API phone number ID |
 | `whatsapp_access_token` | Password |  | Meta Cloud API access token |
 | `whatsapp_api_version` | Data | `v18.0` | Meta Graph API version |
@@ -815,6 +815,9 @@ Open in the desk: `/app/otp-settings`. Fields:
 | `ultramsg_token` | Password |  | UltraMsg instance token |
 | `ultramsg_base_url` | Data | `https://api.ultramsg.com` | UltraMsg API base URL |
 | `ultramsg_priority` | Int | `10` | UltraMsg message priority |
+| `openwaapi_base_url` | Data | `https://openwaapi.danerp.tech/api` | OpenWA API base URL |
+| `openwaapi_api_key` | Password |  | OpenWA API key |
+| `openwaapi_session_id` | Data |  | Connected OpenWA session ID/name |
 
 In `console` mode the plaintext lives in `Phone OTP.code` — readable at `/app/phone-otp`.
 

@@ -10,6 +10,8 @@ The backend is chosen by `whatsapp_backend` in the **OTP Settings** DocType
                            text only. Convenient but the linked number can be
                            banned by WhatsApp — not recommended as the sole
                            production auth channel.
+  - "openwaapi"          — OpenWA API gateway. Requires an API key plus a
+                           connected session ID. Free-form text only.
 
 In `developer_mode`, all sends are stubbed (code is logged, no HTTP call).
 
@@ -65,6 +67,25 @@ page (/app/otp-settings), NOT site_config.json:
 Setup (https://user.ultramsg.com): create an instance, scan the QR with the
 WhatsApp account that will send messages, and copy the instance id + token.
 The OTP message is sent as free-form text via /messages/chat.
+
+----------------------------------------------------------------------------
+OpenWA API (whatsapp_backend = "openwaapi") — configured in the OTP Settings
+desk page (/app/otp-settings):
+
+  - OpenWA API Base URL: https://openwaapi.danerp.tech/api
+  - OpenWA API Key:      <api key>          (stored encrypted)
+  - OpenWA Session ID:   <session id/name>
+
+Setup:
+  1. Create / copy an API key in the OpenWA admin.
+  2. Create and connect a session in OpenWA (scan QR in their UI).
+  3. Paste the API key + session ID into OTP Settings.
+  4. Keep provider=whatsapp and whatsapp_backend=openwaapi.
+
+The OTP message is sent as free-form text via:
+  POST /api/sessions/{sessionId}/messages/send-text
+with header:
+  X-API-Key: <api key>
 """
 
 import base64
@@ -86,7 +107,10 @@ VONAGE_SANDBOX_FROM = "14157386102"
 # ---- UltraMsg defaults ----------------------------------------------
 ULTRAMSG_BASE_URL = "https://api.ultramsg.com"
 
-# Free-form OTP text shared by the text-only backends (vonage, ultramsg).
+# ---- OpenWA API defaults --------------------------------------------
+OPENWAAPI_DEFAULT_BASE_URL = "https://openwaapi.danerp.tech/api"
+
+# Free-form OTP text shared by the text-only backends.
 OTP_TEXT_MESSAGE = (
 	"Your Kameti verification code is {code}. It is valid for 5 minutes. "
 	"Do not share it with anyone."
@@ -135,6 +159,8 @@ def send_otp(phone: str, code: str) -> dict:
 		return _vonage_send_text(phone, _otp_text(code))
 	if provider == "ultramsg":
 		return _ultramsg_send_text(phone, _otp_text(code))
+	if provider == "openwaapi":
+		return _openwaapi_send_text(phone, _otp_text(code))
 
 	return _meta_send_otp(phone, code)
 
@@ -155,6 +181,8 @@ def send_text(phone: str, body: str) -> dict:
 		return _vonage_send_text(phone, body)
 	if provider == "ultramsg":
 		return _ultramsg_send_text(phone, body)
+	if provider == "openwaapi":
+		return _openwaapi_send_text(phone, body)
 
 	return _meta_send_text(phone, body)
 
@@ -176,10 +204,10 @@ def send_template(
 		)
 		return {"provider_id": "dev", "status": "sent"}
 
-	if _provider() in ("vonage", "ultramsg"):
+	if _provider() in ("vonage", "ultramsg", "openwaapi"):
 		frappe.throw(
 			"WhatsApp templates are only supported on the Meta backend. The "
-			"vonage/ultramsg backends send free-form text only — use send_text, "
+			"vonage/ultramsg/openwaapi backends send free-form text only — use send_text, "
 			"or set OTP Settings.whatsapp_backend to 'meta' for approved templates."
 		)
 
@@ -440,5 +468,81 @@ def _ultramsg_post(payload: dict, cfg: dict) -> dict:
 
 	return {
 		"provider_id": data.get("id"),
+		"status": "sent",
+	}
+
+
+# ---- OpenWA API backend ---------------------------------------------
+
+def _openwaapi_send_text(phone: str, body: str) -> dict:
+	cfg = _openwaapi_config()
+	payload = {
+		"chatId": _openwaapi_chat_id(phone),
+		"text": body,
+	}
+	return _openwaapi_post(payload, cfg)
+
+
+def _openwaapi_chat_id(phone: str) -> str:
+	return f"{phone.lstrip('+')}@c.us"
+
+
+def _openwaapi_config() -> dict:
+	doc = _settings()
+	conf = frappe.conf
+	base_url = getattr(doc, "openwaapi_base_url", None) if doc else None
+	api_key = (
+		doc.get_password("openwaapi_api_key", raise_exception=False) if doc else None
+	)
+	session_id = getattr(doc, "openwaapi_session_id", None) if doc else None
+
+	if not base_url:
+		base_url = conf.get("openwaapi_base_url")
+	if not api_key:
+		api_key = conf.get("openwaapi_api_key")
+	if not session_id:
+		session_id = conf.get("openwaapi_session_id")
+
+	if not api_key or not session_id:
+		frappe.throw(
+			"OpenWA API is not configured. Set the OpenWA API Key and Session ID "
+			"in OTP Settings."
+		)
+
+	base_url = (base_url or OPENWAAPI_DEFAULT_BASE_URL).rstrip("/")
+	if not base_url.endswith("/api"):
+		base_url = f"{base_url}/api"
+
+	return {
+		"api_key": api_key,
+		"url": f"{base_url}/sessions/{session_id}/messages/send-text",
+	}
+
+
+def _openwaapi_post(payload: dict, cfg: dict) -> dict:
+	try:
+		response = requests.post(
+			cfg["url"],
+			headers={
+				"X-API-Key": cfg["api_key"],
+				"Content-Type": "application/json",
+				"Accept": "application/json",
+			},
+			json=payload,
+			timeout=HTTP_TIMEOUT_SECONDS,
+		)
+	except requests.RequestException as e:
+		frappe.logger("kameti").error(f"WhatsApp (openwaapi) network error: {e}")
+		raise
+
+	if not response.ok:
+		frappe.logger("kameti").error(
+			f"WhatsApp (openwaapi) API error {response.status_code}: {response.text}"
+		)
+		response.raise_for_status()
+
+	data = response.json()
+	return {
+		"provider_id": data.get("messageId"),
 		"status": "sent",
 	}

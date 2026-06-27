@@ -69,7 +69,7 @@ State lives in two places: the `Phone OTP` DocType (one row per request, attempt
 Provider modes (set in `/app/otp-settings`):
 
 - `console` — default. Stores plaintext in `Phone OTP.code`; nothing is sent. Read it in the desk at `/app/phone-otp` or via the mariadb shell. This is the production-safe stand-in until WhatsApp/Twilio credentials exist.
-- `whatsapp` — calls `whatsapp.send_otp(phone, code)`. `whatsapp.py` chooses the backend from `OTP Settings.whatsapp_backend` (with a legacy `site_config.json` fallback): `meta` (Cloud API with an authentication template) or `vonage` (Messages API / Sandbox - free-form text because the sandbox has no template approval). Meta Cloud API credentials live in `OTP Settings`.
+- `whatsapp` — calls `whatsapp.send_otp(phone, code)`. `whatsapp.py` chooses the backend from `OTP Settings.whatsapp_backend` (with a legacy `site_config.json` fallback): `meta` (Cloud API with an authentication template), `vonage` (Messages API / Sandbox - free-form text because the sandbox has no template approval), `ultramsg`, or `openwaapi`. Meta and OpenWA credentials live in `OTP Settings`.
 - `sms` — calls `sms.send_sms` (Twilio).
 
 Switching providers requires zero code changes — just edit `OTP Settings` (and any legacy `site_config.json` values only if you still rely on them). In console mode `Phone OTP.code_hash` is blank; in `whatsapp`/`sms` mode `code` is blank and only the hash is stored.
