@@ -245,6 +245,130 @@ def reject_payment(payment_id: str, reason: str):
 	return {"ok": True}
 
 
+@frappe.whitelist(methods=["POST"])
+def mark_paid(
+	kameti: str,
+	membership: str,
+	payout_month: int | None = None,
+	method: str = "cash",
+	amount: float | None = None,
+):
+	"""Admin records that a member paid out-of-band (e.g. cash / in person).
+
+	Creates an already-approved Installment Payment on the member's behalf for
+	the current month (or the given payout_month). Idempotent: if the member
+	already has an active payment for that month it is just marked approved.
+	"""
+	common.require_admin(kameti)
+
+	if not frappe.db.exists(
+		"Kameti Membership", {"name": membership, "kameti": kameti, "status": "active"}
+	):
+		frappe.throw("Member not found in this kameti.", frappe.ValidationError)
+
+	if method not in VALID_METHODS:
+		frappe.throw("Invalid method.", frappe.ValidationError)
+
+	committee = frappe.db.get_value(
+		"Kameti Committee", kameti,
+		["current_month", "installment_amount"], as_dict=True,
+	)
+	if payout_month is None:
+		payout_month = committee.current_month or 0
+	payout_month = int(payout_month)
+	if not payout_month:
+		frappe.throw("This kameti has not started yet.", frappe.ValidationError)
+
+	# A member cannot pay for the month in which they receive the payout.
+	slot_recipient = frappe.db.get_value(
+		"Payout Slot", {"kameti": kameti, "month_index": payout_month}, "recipient",
+	)
+	if slot_recipient == membership:
+		frappe.throw(
+			"This member is the receiver this month.", frappe.ValidationError,
+		)
+
+	# Honour a fractional (co-holder) share if present.
+	slot_name = frappe.db.get_value(
+		"Payout Slot", {"kameti": kameti, "month_index": payout_month}, "name",
+	)
+	share_fraction = get_member_share_for_slot(slot_name, membership) if slot_name else None
+	if amount is None:
+		amount = float(committee.installment_amount or 0) * (share_fraction or 1.0)
+	amount = float(amount)
+
+	now = now_datetime()
+	existing = frappe.db.get_value(
+		"Installment Payment",
+		{"kameti": kameti, "payer": membership, "payout_month": payout_month,
+		 "status": ("in", ("pending", "approved"))},
+		"name",
+	)
+	if existing:
+		p = frappe.get_doc("Installment Payment", existing)
+		if p.status == "approved":
+			return {"ok": True, "payment_id": p.name, "status": p.status}
+	else:
+		p = frappe.new_doc("Installment Payment")
+		p.kameti = kameti
+		p.payer = membership
+		p.payout_month = payout_month
+		p.amount = amount
+		p.method = method
+		p.submitted_on = now
+
+	p.status = "approved"
+	p.reviewed_by = frappe.session.user
+	p.reviewed_on = now
+	p.rejection_reason = None
+	if existing:
+		p.save(ignore_permissions=True)
+	else:
+		p.insert(ignore_permissions=True)
+
+	payer_user = frappe.db.get_value("Kameti Membership", membership, "user")
+	admin_name = frappe.db.get_value(
+		"Kameti Profile", {"user": frappe.session.user}, "display_name",
+	) or "Admin"
+	if payer_user:
+		_activity(
+			recipient=payer_user, kameti=kameti, type_="payment_approved",
+			title="Marked as paid",
+			body=f"{admin_name} marked your payment as received.",
+			payload={"payment_id": p.name},
+		)
+	frappe.db.commit()
+	return {"ok": True, "payment_id": p.name, "status": p.status}
+
+
+@frappe.whitelist(methods=["POST"])
+def unmark_paid(kameti: str, membership: str, payout_month: int | None = None):
+	"""Reverse an admin "mark as paid": cancel the member's active payment for
+	the month. Used to undo a mistaken tap."""
+	common.require_admin(kameti)
+
+	if payout_month is None:
+		payout_month = frappe.db.get_value("Kameti Committee", kameti, "current_month") or 0
+	payout_month = int(payout_month)
+
+	existing = frappe.db.get_value(
+		"Installment Payment",
+		{"kameti": kameti, "payer": membership, "payout_month": payout_month,
+		 "status": ("in", ("pending", "approved"))},
+		"name",
+	)
+	if not existing:
+		return {"ok": True}
+	p = frappe.get_doc("Installment Payment", existing)
+	p.status = "rejected"
+	p.reviewed_by = frappe.session.user
+	p.reviewed_on = now_datetime()
+	p.rejection_reason = "Reverted by admin"
+	p.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {"ok": True}
+
+
 def _activity(recipient, kameti, type_, title, body, payload=None):
 	if not recipient:
 		return
