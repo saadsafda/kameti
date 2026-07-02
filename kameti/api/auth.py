@@ -119,6 +119,9 @@ def complete_registration(
 	frappe.db.set_value(
 		"User", user_name, "first_name", display_name, update_modified=False,
 	)
+	frappe.db.set_value(
+		"User", user_name, "full_name", display_name, update_modified=False,
+	)
 	frappe.db.commit()
 	return {"ok": True, "profile": _profile_payload(user_name)}
 
