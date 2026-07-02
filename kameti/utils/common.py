@@ -45,15 +45,20 @@ def short_code_from(title: str) -> str:
 
 
 def mask_phone(phone: str | None) -> str:
+	"""Mask an E.164 number, keeping the leading `+` and last 2 digits visible.
+
+	Doesn't assume a fixed country-code length (PK/US are 1-3 digits, others
+	up to 3), so it masks everything between the `+` and the last 2 digits
+	rather than trying to split out a country code + area code.
+	"""
 	if not phone or not phone.startswith("+"):
 		return phone or ""
 	digits = phone[1:]
 	if len(digits) < 7:
 		return phone
-	cc = digits[:2]
-	area = digits[2:5]
 	last2 = digits[-2:]
-	return f"+{cc} {area} ••• ••{last2}"
+	hidden = len(digits) - 2
+	return f"+{'•' * hidden}{last2}"
 
 
 def new_invite_code() -> str:
