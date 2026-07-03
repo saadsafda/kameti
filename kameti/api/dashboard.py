@@ -21,12 +21,23 @@ def get_member_dashboard(kameti: str):
 
 	existing = None
 	if cm:
-		existing = frappe.db.get_value(
-			"Installment Payment",
-			{"kameti": kameti, "payer": mem.name, "payout_month": cm,
-			 "status": ("in", ("pending", "approved"))},
-			["name", "status"], as_dict=True,
+		# Include 'rejected' so the member's dashboard still gets an
+		# existing_payment_id to look up — that's how the client surfaces
+		# the rejection (reason, resubmit CTA) instead of silently
+		# reverting to a plain "you owe" card. status_label below still
+		# reports 'unpaid' for a rejected receipt since the member owes
+		# again either way. A resubmit after rejection leaves both rows
+		# in place, so prefer the active (pending/approved) one over a
+		# stale rejected one, then fall back to the most recent.
+		rows = frappe.db.sql(
+			"""SELECT name, status FROM `tabInstallment Payment`
+			   WHERE kameti=%s AND payer=%s AND payout_month=%s
+			     AND status IN ('pending', 'approved', 'rejected')
+			   ORDER BY FIELD(status, 'pending', 'approved', 'rejected'), submitted_on DESC
+			   LIMIT 1""",
+			(kameti, mem.name, cm), as_dict=True,
 		)
+		existing = rows[0] if rows else None
 
 	due_on = _due_date(committee, cm)
 	days_left = date_diff(due_on, today()) if due_on else None
@@ -47,7 +58,7 @@ def get_member_dashboard(kameti: str):
 
 	status_label = "upcoming"
 	if cm:
-		status_label = existing.status if existing else "unpaid"
+		status_label = existing.status if existing and existing.status != "rejected" else "unpaid"
 
 	# Collect ALL payout slots this member is involved in:
 	# 1. Solo slot (recipient field)

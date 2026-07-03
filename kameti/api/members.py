@@ -70,22 +70,45 @@ def add(
 
 	existing_user = common.user_name_for_phone(phone)
 
-	mem = frappe.new_doc("Kameti Membership")
-	mem.kameti = kameti
-	mem.user = existing_user
-	mem.display_name = display_name.strip()[:60]
-	mem.urdu_name = urdu_name
-	mem.phone = phone
-	mem.initials = common.initials_from(display_name)
-	mem.avatar_tone = (
-		avatar_tone if avatar_tone in common.AVATAR_TONES else common.random_tone()
+	removed_name = frappe.db.get_value(
+		"Kameti Membership",
+		{"kameti": kameti, "phone": phone, "status": "removed"},
+		"name",
 	)
-	mem.role = "member"
-	mem.status = "active"
-	mem.payout_month = payout_month
-	mem.assignment_method = "manual" if payout_month else None
-	mem.joined_on = now_datetime()
-	mem.insert(ignore_permissions=True)
+
+	if removed_name:
+		mem = frappe.get_doc("Kameti Membership", removed_name)
+		mem.user = existing_user
+		mem.display_name = display_name.strip()[:60]
+		mem.urdu_name = urdu_name
+		mem.initials = common.initials_from(display_name)
+		mem.avatar_tone = (
+			avatar_tone if avatar_tone in common.AVATAR_TONES else common.random_tone()
+		)
+		mem.role = "member"
+		mem.status = "active"
+		mem.payout_month = payout_month
+		mem.assignment_method = "manual" if payout_month else None
+		mem.joined_on = now_datetime()
+		mem.removed_on = None
+		mem.save(ignore_permissions=True)
+	else:
+		mem = frappe.new_doc("Kameti Membership")
+		mem.kameti = kameti
+		mem.user = existing_user
+		mem.display_name = display_name.strip()[:60]
+		mem.urdu_name = urdu_name
+		mem.phone = phone
+		mem.initials = common.initials_from(display_name)
+		mem.avatar_tone = (
+			avatar_tone if avatar_tone in common.AVATAR_TONES else common.random_tone()
+		)
+		mem.role = "member"
+		mem.status = "active"
+		mem.payout_month = payout_month
+		mem.assignment_method = "manual" if payout_month else None
+		mem.joined_on = now_datetime()
+		mem.insert(ignore_permissions=True)
 
 	if payout_month:
 		_link_membership_to_slot(kameti, payout_month, mem.name)
