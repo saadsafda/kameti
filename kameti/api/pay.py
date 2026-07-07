@@ -13,12 +13,16 @@ VALID_METHODS = ("easypaisa", "jazzcash", "bank", "cash", "other")
 @frappe.whitelist(methods=["GET"])
 def get_payment_methods(kameti: str):
 	common.require_membership_or_admin(kameti)
+	committee_title = frappe.db.get_value("Kameti Committee", kameti, "title")
 	admin_user = frappe.db.get_value("Kameti Committee", kameti, "admin")
 	admin_name = frappe.db.get_value(
 		"Kameti Membership",
 		{"kameti": kameti, "user": admin_user, "role": "admin", "status": "active"},
 		"display_name",
 	) or "Admin"
+	admin_phone = frappe.db.get_value(
+		"Kameti Profile", {"user": admin_user}, "phone",
+	)
 	rows = frappe.get_all(
 		"Payment Account",
 		filters={"kameti": kameti, "is_active": 1},
@@ -27,7 +31,12 @@ def get_payment_methods(kameti: str):
 	)
 	for r in rows:
 		r["id"] = r.pop("name", None)
-	return {"admin_name": admin_name, "accounts": rows}
+	return {
+		"admin_name": admin_name,
+		"admin_phone": admin_phone,
+		"kameti_title": committee_title,
+		"accounts": rows,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -135,7 +144,7 @@ def get_payment(payment_id: str):
 	) or {}
 	admin_profile = frappe.db.get_value(
 		"Kameti Profile", {"user": admin},
-		["display_name", "last_active"], as_dict=True,
+		["display_name", "phone", "last_active"], as_dict=True,
 	) or {}
 	online = False
 	if admin_profile.get("last_active"):
@@ -159,6 +168,7 @@ def get_payment(payment_id: str):
 		"rejection_reason": p.rejection_reason,
 		"admin": {
 			"display_name": admin_profile.get("display_name") or "Admin",
+			"phone": admin_profile.get("phone"),
 			"online": online,
 		},
 	}
