@@ -137,6 +137,8 @@ def get_member_dashboard(kameti: str):
 		"progress": {"current": cm, "total": committee.members_count},
 		"this_month_recipient": _recipient_card(kameti, cm),
 		"schedule_preview": _schedule_preview(kameti, cm),
+		"organizer": _organizer(committee),
+		"payment_history": _payment_history(committee, mem.name),
 	}
 
 
@@ -325,6 +327,91 @@ def _due_date(committee, cm: int):
 		return None
 	month_start = add_months(committee.start_month, cm - 1)
 	return getdate(month_start).replace(day=5)
+
+
+def _organizer(committee) -> dict | None:
+	"""The committee admin, resolved to their membership card for display."""
+	if not committee.admin:
+		return None
+	mem = frappe.db.get_value(
+		"Kameti Membership",
+		{"kameti": committee.name, "user": committee.admin},
+		["display_name", "initials", "avatar_tone"],
+		as_dict=True,
+	)
+	if mem:
+		return {
+			"display_name": mem.display_name,
+			"initials": mem.initials,
+			"tone": mem.avatar_tone,
+		}
+	# Admin isn't a member (or membership missing) — fall back to the user's
+	# full name so the card still shows a real person.
+	full_name = frappe.db.get_value("User", committee.admin, "full_name")
+	if not full_name:
+		return None
+	return {"display_name": full_name, "initials": None, "tone": None}
+
+
+def _payment_history(committee, membership: str) -> list[dict]:
+	"""One row per elapsed month for this member: whether they paid, and when.
+
+	Covers months 1..current_month. For each, we look up the member's own
+	installment payment (the slot they pay INTO for that month) and derive a
+	status the client can render directly:
+	  - paid     : an approved payment exists (on-time / late by N days vs due)
+	  - pending  : a receipt is submitted but not yet approved
+	  - due      : the current month, still unpaid
+	  - upcoming : month hasn't come due yet (only if included)
+	"""
+	cm = committee.current_month or 0
+	if not cm:
+		return []
+
+	# Pull every payment this member made in this kameti once, keyed by month.
+	rows = frappe.get_all(
+		"Installment Payment",
+		filters={"kameti": committee.name, "payer": membership},
+		fields=["payout_month", "status", "submitted_on", "reviewed_on"],
+		order_by="submitted_on asc",
+	)
+	# Prefer approved > pending > rejected when multiple rows exist for a month.
+	rank = {"approved": 0, "pending": 1, "rejected": 2}
+	by_month: dict[int, dict] = {}
+	for r in rows:
+		m = r.payout_month
+		if m not in by_month or rank.get(r.status, 9) < rank.get(by_month[m].status, 9):
+			by_month[m] = r
+
+	out = []
+	for m in range(1, cm + 1):
+		due = _due_date(committee, m)
+		month_date = add_months(committee.start_month, m - 1) if committee.start_month else None
+		row = by_month.get(m)
+		status = "due" if m == cm else "unpaid"
+		paid_on = None
+		days_late = 0
+		if row:
+			if row.status == "approved":
+				status = "paid"
+				paid_on = row.reviewed_on or row.submitted_on
+				# Lateness measured against the due date using the submission day.
+				if due and row.submitted_on:
+					diff = date_diff(getdate(row.submitted_on), due)
+					days_late = diff if diff > 0 else 0
+			elif row.status == "pending":
+				status = "pending"
+				paid_on = row.submitted_on
+		out.append({
+			"month_index": m,
+			"month_label": formatdate(month_date, "MMM") if month_date else None,
+			"month_date": month_date.isoformat() if month_date else None,
+			"due_on": due.isoformat() if due else None,
+			"status": status,
+			"paid_on": paid_on.isoformat() if paid_on else None,
+			"days_late": days_late,
+		})
+	return out
 
 
 def _schedule_preview(kameti: str, cm: int) -> list[dict]:
