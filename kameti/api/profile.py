@@ -10,8 +10,11 @@ EDITABLE_FIELDS = {
 	"avatar_tone", "avatar_image", "gender", "date_of_birth",
 }
 
-# Fields required for a profile to be considered 100% complete.
-COMPLETION_FIELDS = ("display_name", "gender", "date_of_birth", "avatar_image")
+# Fields required for a profile to be considered 100% complete — each worth
+# an equal share (20% apiece for these 5).
+COMPLETION_FIELDS = (
+	"display_name", "phone", "gender", "date_of_birth", "avatar_image",
+)
 
 
 @frappe.whitelist(methods=["GET"])

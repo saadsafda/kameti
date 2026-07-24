@@ -213,8 +213,8 @@ def _profile_payload(user_name: str) -> dict:
 
 	p = frappe.db.get_value(
 		"Kameti Profile", {"user": user_name},
-		["display_name", "urdu_name", "gender", "date_of_birth", "language",
-		 "dark_mode", "avatar_tone", "avatar_image"],
+		["display_name", "urdu_name", "phone", "gender", "date_of_birth",
+		 "language", "dark_mode", "avatar_tone", "avatar_image"],
 		as_dict=True,
 	) or {}
 	dob = p.get("date_of_birth")
