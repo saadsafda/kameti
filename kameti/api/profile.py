@@ -48,6 +48,28 @@ def update_profile(**kwargs):
 	return _profile_dict(user)
 
 
+@frappe.whitelist(methods=["POST"])
+def delete_avatar():
+	user = common.require_session_user()
+	profile_name = frappe.db.get_value("Kameti Profile", {"user": user}, "name")
+	if not profile_name:
+		frappe.throw(
+			"Profile not found. Complete registration first.",
+			frappe.DoesNotExistError,
+		)
+	profile = frappe.get_doc("Kameti Profile", profile_name)
+	old_file = profile.avatar_image
+	profile.avatar_image = None
+	profile.save(ignore_permissions=True)
+	if old_file:
+		for file_name in frappe.get_all(
+			"File", filters={"file_url": old_file}, pluck="name",
+		):
+			frappe.delete_doc("File", file_name, ignore_permissions=True)
+	frappe.db.commit()
+	return _profile_dict(user)
+
+
 def ensure_profile_for_user(doc, method=None):
 	# Profile creation is owned by the auth flow. Hook is wired for forward use.
 	pass
