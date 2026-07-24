@@ -7,8 +7,11 @@ from kameti.utils import common
 
 EDITABLE_FIELDS = {
 	"display_name", "urdu_name", "language", "dark_mode",
-	"avatar_tone", "avatar_image",
+	"avatar_tone", "avatar_image", "gender", "date_of_birth",
 }
+
+# Fields required for a profile to be considered 100% complete.
+COMPLETION_FIELDS = ("display_name", "gender", "date_of_birth", "avatar_image")
 
 
 @frappe.whitelist(methods=["GET"])
@@ -47,11 +50,17 @@ def ensure_profile_for_user(doc, method=None):
 	pass
 
 
+def profile_completion_percent(p) -> int:
+	"""% of COMPLETION_FIELDS that are filled in on a Kameti Profile doc/dict."""
+	filled = sum(1 for f in COMPLETION_FIELDS if p.get(f))
+	return round(filled * 100 / len(COMPLETION_FIELDS))
+
+
 def _profile_dict(user_name: str) -> dict:
 	p = frappe.db.get_value(
 		"Kameti Profile", {"user": user_name},
-		["display_name", "urdu_name", "phone", "language", "dark_mode",
-		 "avatar_tone", "avatar_image"],
+		["display_name", "urdu_name", "phone", "gender", "date_of_birth",
+		 "language", "dark_mode", "avatar_tone", "avatar_image"],
 		as_dict=True,
 	)
 	if not p:
@@ -64,10 +73,13 @@ def _profile_dict(user_name: str) -> dict:
 		"display_name": p.display_name,
 		"urdu_name": p.urdu_name,
 		"phone": p.phone,
+		"gender": p.gender,
+		"date_of_birth": p.date_of_birth.isoformat() if p.date_of_birth else None,
 		"language": p.language or "en",
 		"dark_mode": bool(p.dark_mode),
 		"avatar_tone": p.avatar_tone or "clay",
 		"avatar_url": p.avatar_image,
 		"joined_on": created.isoformat() if created else None,
 		"kametis_count": kc,
+		"profile_completion_percent": profile_completion_percent(p),
 	}

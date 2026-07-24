@@ -91,6 +91,9 @@ def complete_registration(
 	urdu_name: str | None = None,
 	language: str = "en",
 	avatar_tone: str | None = None,
+	gender: str | None = None,
+	date_of_birth: str | None = None,
+	avatar_image: str | None = None,
 ):
 	user_name = common.require_session_user()
 	if not display_name or not display_name.strip():
@@ -114,6 +117,12 @@ def complete_registration(
 		profile.avatar_tone = avatar_tone
 	elif not profile.avatar_tone:
 		profile.avatar_tone = common.random_tone()
+	if gender in ("Male", "Female", "Other"):
+		profile.gender = gender
+	if date_of_birth:
+		profile.date_of_birth = date_of_birth
+	if avatar_image:
+		profile.avatar_image = avatar_image
 
 	profile.save(ignore_permissions=True)
 	frappe.db.set_value(
@@ -200,17 +209,23 @@ def _rotate_api_keys(user_doc) -> tuple[str, str]:
 
 
 def _profile_payload(user_name: str) -> dict:
+	from kameti.api.profile import profile_completion_percent
+
 	p = frappe.db.get_value(
 		"Kameti Profile", {"user": user_name},
-		["display_name", "urdu_name", "language", "dark_mode",
-		 "avatar_tone", "avatar_image"],
+		["display_name", "urdu_name", "gender", "date_of_birth", "language",
+		 "dark_mode", "avatar_tone", "avatar_image"],
 		as_dict=True,
 	) or {}
+	dob = p.get("date_of_birth")
 	return {
 		"display_name": p.get("display_name"),
 		"urdu_name": p.get("urdu_name"),
+		"gender": p.get("gender"),
+		"date_of_birth": dob.isoformat() if dob else None,
 		"language": p.get("language") or "en",
 		"dark_mode": bool(p.get("dark_mode")),
 		"avatar_tone": p.get("avatar_tone") or "clay",
 		"avatar_url": p.get("avatar_image"),
+		"profile_completion_percent": profile_completion_percent(p),
 	}

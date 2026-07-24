@@ -9,6 +9,8 @@
   "phone",
   "display_name",
   "urdu_name",
+  "gender",
+  "date_of_birth",
   "language",
   "dark_mode",
   "avatar_tone",
@@ -45,6 +47,17 @@
    "fieldname": "urdu_name",
    "fieldtype": "Data",
    "label": "Urdu Name"
+  },
+  {
+   "fieldname": "gender",
+   "fieldtype": "Select",
+   "label": "Gender",
+   "options": "\nMale\nFemale\nOther"
+  },
+  {
+   "fieldname": "date_of_birth",
+   "fieldtype": "Date",
+   "label": "Date of Birth"
   },
   {
    "default": "en",
