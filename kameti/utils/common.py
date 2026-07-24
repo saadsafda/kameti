@@ -4,8 +4,11 @@ import re
 import secrets
 
 import frappe
+from frappe.utils import add_months, getdate
 
 E164_RE = re.compile(r"^\+[1-9]\d{6,14}$")
+# Installments are due on the 5th of each cycle month.
+DUE_DAY_OF_MONTH = 5
 AVATAR_TONES = ("clay", "plum", "teal", "green", "amber", "rust")
 INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -114,3 +117,15 @@ def require_session_user() -> str:
 	if not user or user == "Guest":
 		frappe.throw("Not authenticated.", frappe.AuthenticationError)
 	return user
+
+
+def due_date_for_month(start_month, month_index: int):
+	"""The installment due date for a committee's Nth cycle month.
+
+	`month_index` is 1-based (`Kameti Committee.current_month`). Returns None
+	when the committee has no start_month or hasn't started yet.
+	"""
+	if not month_index or not start_month:
+		return None
+	month_start = add_months(start_month, month_index - 1)
+	return getdate(month_start).replace(day=DUE_DAY_OF_MONTH)

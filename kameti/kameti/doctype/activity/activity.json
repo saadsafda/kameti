@@ -36,7 +36,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Type",
-   "options": "payment_pending\npayment_approved\npayment_rejected\nreminder_received\ndraw_complete\nmember_joined\ncycle_complete\nannouncement",
+   "options": "payment_pending\npayment_approved\npayment_rejected\npayment_due\npayment_overdue\npayment_due_rejected\nreminder_received\ndraw_complete\nmember_joined\ncycle_complete\nannouncement",
    "reqd": 1
   },
   {

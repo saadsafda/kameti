@@ -323,10 +323,7 @@ def _recipient_card(kameti: str, cm: int) -> dict | list | None:
 
 
 def _due_date(committee, cm: int):
-	if not cm or not committee.start_month:
-		return None
-	month_start = add_months(committee.start_month, cm - 1)
-	return getdate(month_start).replace(day=5)
+	return common.due_date_for_month(committee.start_month, cm)
 
 
 def _organizer(committee) -> dict | None:

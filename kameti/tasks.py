@@ -1,7 +1,9 @@
 """Scheduled jobs for the Kameti app. Wired in hooks.py / scheduler_events."""
 
 import frappe
-from frappe.utils import add_months, add_to_date, getdate, now_datetime
+from frappe.utils import add_to_date, fmt_money, getdate, now_datetime
+
+from kameti.utils import common
 
 
 def activate_due_kametis():
@@ -95,44 +97,162 @@ def send_due_reminders():
 		fields=["name", "current_month", "start_month", "installment_amount"],
 	)
 	for c in committees:
-		if not c.current_month or not c.start_month:
+		due_on = common.due_date_for_month(c.start_month, c.current_month)
+		if not due_on or (due_on - today).days != 3:
 			continue
-		month_start = add_months(c.start_month, c.current_month - 1)
-		due_on = getdate(month_start).replace(day=5)
-		if (due_on - today).days != 3:
-			continue
-		members = frappe.get_all(
-			"Kameti Membership",
-			filters={"kameti": c.name, "status": "active"},
-			pluck="name",
-		)
-		recipient = frappe.db.get_value(
-			"Payout Slot",
-			{"kameti": c.name, "month_index": c.current_month},
-			"recipient",
-		)
-		for m in members:
-			if m == recipient:
-				continue
-			paid = frappe.db.exists(
-				"Installment Payment",
-				{"kameti": c.name, "payer": m, "payout_month": c.current_month,
-				 "status": ("in", ("pending", "approved"))},
-			)
-			if paid:
-				continue
+		for row in _unpaid_members(c.name, c.current_month):
+			if row["state"] == "rejected":
+				payload = (
+					f"Your payment of {c.installment_amount} was rejected"
+					+ (f' ({row["reason"]})' if row["reason"] else "")
+					+ ". Please resend proof — due in 3 days."
+				)
+			else:
+				payload = (
+					f"Reminder: your installment of {c.installment_amount} is due in 3 days."
+				)
 			r = frappe.new_doc("Reminder")
 			r.kameti = c.name
-			r.member = m
+			r.member = row["membership"]
 			r.channel = "sms"
 			r.language = "en"
-			r.payload = (
-				f"Reminder: your installment of {c.installment_amount} is due in 3 days."
-			)
+			r.payload = payload
 			r.status = "queued"
 			r.sent_by = "Administrator"
 			r.insert(ignore_permissions=True)
 	frappe.db.commit()
+
+
+def send_due_push_notifications():
+	"""Daily: in-app + push notification 2 days before the due date, and on it.
+
+	Creates an Activity per unpaid member; the `Activity.after_insert` hook in
+	hooks.py fans it out to FCM. Idempotent — if the job runs twice in one day
+	the second pass is a no-op, since an Activity of the same type already
+	exists for that member today.
+	"""
+	today = getdate()
+	committees = frappe.get_all(
+		"Kameti Committee",
+		filters={"cycle_state": "active", "archived": 0},
+		fields=["name", "title", "current_month", "start_month",
+				"installment_amount"],
+	)
+	for c in committees:
+		due_on = common.due_date_for_month(c.start_month, c.current_month)
+		if not due_on:
+			continue
+		days_left = (due_on - today).days
+		if days_left not in (2, 0):
+			continue
+
+		amount = fmt_money(c.installment_amount or 0, currency="PKR")
+		when = f"on {due_on.strftime('%d %b')}" if days_left == 2 else "today"
+
+		for row in _unpaid_members(c.name, c.current_month):
+			user = frappe.db.get_value(
+				"Kameti Membership", row["membership"], "user",
+			)
+			if not user:
+				continue
+
+			if row["state"] == "rejected":
+				# Their receipt was turned down — resubmitting is the action,
+				# so say that instead of implying they never paid.
+				type_ = "payment_due_rejected"
+				title = (
+					"Payment rejected — resubmit in 2 days"
+					if days_left == 2
+					else "Payment rejected — due today"
+				)
+				body = f"Your payment for {c.title} was rejected"
+				if row["reason"]:
+					body += f' ({row["reason"]})'
+				body += f". Please resend proof of {amount} — due {when}."
+			else:
+				type_ = "payment_due" if days_left == 2 else "payment_overdue"
+				title = (
+					"Installment due in 2 days"
+					if days_left == 2
+					else "Installment due today"
+				)
+				body = f"Your {amount} installment for {c.title} is due {when}."
+
+			# Don't re-notify if this member already got this alert today.
+			# (Keyed on the day rather than the payload: the daily job only
+			# fires each type once per cycle anyway, since days_left is
+			# unique per day.)
+			if frappe.db.exists("Activity", {
+				"recipient": user, "kameti": c.name, "type": type_,
+				"creation": (">=", today),
+			}):
+				continue
+
+			a = frappe.new_doc("Activity")
+			a.recipient = user
+			a.kameti = c.name
+			a.type = type_
+			a.title = title
+			a.body = body
+			a.payload = frappe.as_json({
+				"kameti_id": c.name,
+				"month": c.current_month,
+				"due_on": due_on.isoformat(),
+				"state": row["state"],
+			})
+			a.is_read = 0
+			a.insert(ignore_permissions=True)
+	frappe.db.commit()
+
+
+def _unpaid_members(kameti: str, month: int) -> list[dict]:
+	"""Active memberships still owing for `month`, and why.
+
+	Excludes that month's payout recipient (they receive, not pay) and anyone
+	with a pending or approved payment — a pending receipt is awaiting admin
+	review, so nagging them would be wrong.
+
+	Each row is `{"membership", "state", "reason"}` where `state` is:
+	  "none"     — never submitted a receipt.
+	  "rejected" — submitted, but the admin rejected it; `reason` holds the
+	               admin's rejection note so the message can reference it.
+	"""
+	members = frappe.get_all(
+		"Kameti Membership",
+		filters={"kameti": kameti, "status": "active"},
+		pluck="name",
+	)
+	recipient = frappe.db.get_value(
+		"Payout Slot", {"kameti": kameti, "month_index": month}, "recipient",
+	)
+	out = []
+	for m in members:
+		if m == recipient:
+			continue
+		if frappe.db.exists("Installment Payment", {
+			"kameti": kameti, "payer": m, "payout_month": month,
+			"status": ("in", ("pending", "approved")),
+		}):
+			continue
+		# No active payment. If their most recent attempt was rejected, tell
+		# them that specifically rather than "you haven't paid".
+		last_rejected = frappe.get_all(
+			"Installment Payment",
+			filters={"kameti": kameti, "payer": m, "payout_month": month,
+					 "status": "rejected"},
+			fields=["rejection_reason"],
+			order_by="reviewed_on desc",
+			limit=1,
+		)
+		if last_rejected:
+			out.append({
+				"membership": m,
+				"state": "rejected",
+				"reason": (last_rejected[0].get("rejection_reason") or "").strip(),
+			})
+		else:
+			out.append({"membership": m, "state": "none", "reason": ""})
+	return out
 
 
 def dispatch_reminder_queue():
