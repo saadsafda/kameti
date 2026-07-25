@@ -300,6 +300,40 @@ def dispatch_reminder_queue():
 	frappe.db.commit()
 
 
+def send_birthday_wishes():
+	"""Daily: wish every active member whose date_of_birth is today.
+
+	Matches month+day only (year is birth year, not this year). Creates one
+	Activity per matching Kameti Profile; the `Activity.after_insert` hook in
+	hooks.py fans it out to FCM, same pipeline as the payment-due reminders.
+	Idempotent — skips a user who already got a `birthday` Activity today, so
+	re-running the job the same day is a no-op.
+	"""
+	today = getdate()
+	profiles = frappe.get_all(
+		"Kameti Profile",
+		filters={"date_of_birth": ("is", "set")},
+		fields=["user", "display_name", "date_of_birth"],
+	)
+	for p in profiles:
+		dob = getdate(p.date_of_birth)
+		if (dob.month, dob.day) != (today.month, today.day):
+			continue
+		if frappe.db.exists("Activity", {
+			"recipient": p.user, "type": "birthday", "creation": (">=", today),
+		}):
+			continue
+		a = frappe.new_doc("Activity")
+		a.recipient = p.user
+		a.type = "birthday"
+		a.title = "Happy Birthday!"
+		a.body = f"Wishing you a wonderful birthday, {p.display_name}!"
+		a.payload = frappe.as_json({"user": p.user})
+		a.is_read = 0
+		a.insert(ignore_permissions=True)
+	frappe.db.commit()
+
+
 def archive_completed_kametis():
 	"""Set cycle_state=completed when all payout slots are paid."""
 	rows = frappe.db.sql(

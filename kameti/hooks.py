@@ -62,6 +62,7 @@ scheduler_events = {
 		"kameti.tasks.expire_otps",
 		"kameti.tasks.send_due_reminders",
 		"kameti.tasks.send_due_push_notifications",
+		"kameti.tasks.send_birthday_wishes",
 		"kameti.tasks.archive_completed_kametis",
 	],
 }
