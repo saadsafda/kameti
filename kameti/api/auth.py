@@ -19,12 +19,34 @@ def request_otp(phone: str, purpose: str = "login"):
 		requested_ip=getattr(frappe.local, "request_ip", None),
 		settings=settings,
 	)
-	if provider == "whatsapp":
-		whatsapp.send_otp(phone, code)
-	elif provider == "sms":
-		from kameti.utils import sms as sms_provider
-		sms_provider.send_sms(
-			phone, f"Your Kameti code is {code}. Valid for 5 minutes.",
+	try:
+		if provider == "whatsapp":
+			whatsapp.send_otp(phone, code)
+		elif provider == "sms":
+			from kameti.utils import sms as sms_provider
+			sms_provider.send_sms(
+				phone, f"Your Kameti code is {code}. Valid for 5 minutes.",
+			)
+	except whatsapp.NotOnWhatsAppError:
+		# Nothing was delivered — drop the unusable code and let the user retry
+		# immediately with a different number instead of burning their quota.
+		frappe.db.rollback()
+		raise
+	except whatsapp.WhatsAppDeliveryError:
+		frappe.db.rollback()
+		raise
+	except Exception:
+		# Any other provider failure: log the detail for us, show the user a
+		# plain message rather than a raw traceback.
+		frappe.log_error(
+			title="OTP send failed",
+			message=frappe.get_traceback(),
+		)
+		frappe.db.rollback()
+		frappe.throw(
+			"We couldn't send your verification code right now. Please try "
+			"again in a moment.",
+			whatsapp.WhatsAppDeliveryError,
 		)
 	# provider == "console": code is in Phone OTP doctype, nothing to send.
 	otp.record_request(phone, settings=settings)

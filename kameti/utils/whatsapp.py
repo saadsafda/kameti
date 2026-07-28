@@ -119,6 +119,14 @@ OTP_TEXT_MESSAGE = (
 HTTP_TIMEOUT_SECONDS = 10
 
 
+class NotOnWhatsAppError(frappe.ValidationError):
+	"""The recipient number is not a registered WhatsApp account."""
+
+
+class WhatsAppDeliveryError(frappe.ValidationError):
+	"""The WhatsApp gateway could not accept the message."""
+
+
 def _settings():
 	"""OTP Settings Single doc, or None before it has been migrated."""
 	try:
@@ -476,11 +484,65 @@ def _ultramsg_post(payload: dict, cfg: dict) -> dict:
 
 def _openwaapi_send_text(phone: str, body: str) -> dict:
 	cfg = _openwaapi_config()
+	# The send endpoint returns 201 even for numbers that are not on WhatsApp
+	# (and 500s on some of them), so pre-validate the recipient to get a clear
+	# "not on WhatsApp" answer instead of an opaque gateway failure.
+	_openwaapi_assert_on_whatsapp(phone, cfg)
 	payload = {
 		"chatId": _openwaapi_chat_id(phone),
 		"text": body,
 	}
 	return _openwaapi_post(payload, cfg)
+
+
+def _openwaapi_assert_on_whatsapp(phone: str, cfg: dict) -> None:
+	"""Throw NotOnWhatsAppError if `phone` has no WhatsApp account.
+
+	A check that cannot be completed (gateway down, unexpected payload) is
+	treated as inconclusive and lets the send proceed — we only block on a
+	definite negative.
+	"""
+	number = phone.lstrip("+")
+	try:
+		response = requests.get(
+			f"{cfg['base_url']}/sessions/{cfg['session_id']}/contacts/check/{number}",
+			headers={
+				"X-API-Key": cfg["api_key"],
+				"Accept": "application/json",
+			},
+			timeout=HTTP_TIMEOUT_SECONDS,
+		)
+	except requests.RequestException as e:
+		frappe.logger("kameti").warning(
+			f"WhatsApp (openwaapi) number check failed for {number}: {e}"
+		)
+		return
+
+	if not response.ok:
+		frappe.logger("kameti").warning(
+			f"WhatsApp (openwaapi) number check HTTP {response.status_code} "
+			f"for {number}: {response.text}"
+		)
+		return
+
+	try:
+		data = response.json()
+	except ValueError:
+		return
+	if not isinstance(data, dict):
+		return
+
+	# The gateway reports existence under one of a few key names depending on
+	# the engine behind the session; only a definite False blocks the send.
+	for key in ("exists", "isRegistered", "registered", "numberExists", "onWhatsApp"):
+		if key in data:
+			if data[key] is False:
+				raise NotOnWhatsAppError(
+					"This number isn't registered on WhatsApp. We send the "
+					"code by WhatsApp, so please enter the number that has "
+					"WhatsApp installed."
+				)
+			return
 
 
 def _openwaapi_chat_id(phone: str) -> str:
@@ -515,6 +577,8 @@ def _openwaapi_config() -> dict:
 
 	return {
 		"api_key": api_key,
+		"base_url": base_url,
+		"session_id": session_id,
 		"url": f"{base_url}/sessions/{session_id}/messages/send-text",
 	}
 
@@ -533,15 +597,30 @@ def _openwaapi_post(payload: dict, cfg: dict) -> dict:
 		)
 	except requests.RequestException as e:
 		frappe.logger("kameti").error(f"WhatsApp (openwaapi) network error: {e}")
-		raise
+		raise WhatsAppDeliveryError(
+			"We couldn't reach WhatsApp just now. Please try again in a moment."
+		) from e
 
 	if not response.ok:
 		frappe.logger("kameti").error(
 			f"WhatsApp (openwaapi) API error {response.status_code}: {response.text}"
 		)
-		response.raise_for_status()
+		if response.status_code in (400, 404):
+			# Session not found / not connected — an operator problem, not the
+			# user's, so don't blame their number.
+			raise WhatsAppDeliveryError(
+				"WhatsApp isn't connected on our side right now. Please try "
+				"again shortly."
+			)
+		raise WhatsAppDeliveryError(
+			"We couldn't send your code on WhatsApp. Please check the number "
+			"and try again."
+		)
 
-	data = response.json()
+	try:
+		data = response.json()
+	except ValueError:
+		data = {}
 	return {
 		"provider_id": data.get("messageId"),
 		"status": "sent",
