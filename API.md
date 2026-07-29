@@ -130,6 +130,8 @@ Single payload for the home screen.
 **Response**
 ```json
 {
+  "total_contributions_this_month": 35000,
+  "contribution_count": 3,
   "total_owed_this_month": 35000,
   "owed_count": 3,
   "unread_notifications": 2,
@@ -161,6 +163,12 @@ Single payload for the home screen.
   ]
 }
 ```
+
+`total_contributions_this_month` is the sum of the signed-in user's installment
+amount across every current, non-archived kameti, including committees at month
+0 (`not_started`) and excluding only `completed` committees. It does not
+decrease after a payment is submitted and does not exclude the current
+recipient. The `owed` fields are compatibility aliases for older app builds.
 
 ---
 

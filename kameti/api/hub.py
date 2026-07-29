@@ -16,8 +16,8 @@ def get_my_kametis():
 	)
 
 	result = []
-	total_owed = 0
-	owed_count = 0
+	total_contributions = 0
+	contribution_count = 0
 	for m in memberships:
 		c = frappe.db.get_value(
 			"Kameti Committee", m.kameti,
@@ -33,17 +33,14 @@ def get_my_kametis():
 		counts = _payment_counts(m.kameti, c.current_month)
 		last_payer = _last_payer(m.kameti, c.current_month)
 
-		caller_paid = bool(frappe.db.exists(
-			"Installment Payment",
-			{"kameti": m.kameti, "payer": m.name, "payout_month": c.current_month,
-			 "status": ("in", ("pending", "approved"))},
-		)) if c.current_month else True
-		caller_is_recipient = (
-			bool(recipient) and recipient.get("membership_id") == m.name
-		)
-		if c.cycle_state == "active" and not caller_paid and not caller_is_recipient:
-			total_owed += c.installment_amount or 0
-			owed_count += 1
+		# The hub card is a stable contributions summary, not an outstanding-
+		# balance card. Include every current membership shown in the hub's
+		# ACTIVE section, including committees at month 0 (not_started),
+		# regardless of payment/recipient state. Only completed committees are
+		# excluded.
+		if c.cycle_state != "completed":
+			total_contributions += c.installment_amount or 0
+			contribution_count += 1
 
 		result.append({
 			"id": c.name,
@@ -66,8 +63,12 @@ def get_my_kametis():
 
 	unread = frappe.db.count("Activity", {"recipient": user, "is_read": 0})
 	return {
-		"total_owed_this_month": total_owed,
-		"owed_count": owed_count,
+		"total_contributions_this_month": total_contributions,
+		"contribution_count": contribution_count,
+		# Backwards compatibility for app builds released before the summary
+		# card was renamed from "owed" to "contributions".
+		"total_owed_this_month": total_contributions,
+		"owed_count": contribution_count,
 		"unread_notifications": unread,
 		"kametis": result,
 	}
