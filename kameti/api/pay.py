@@ -370,13 +370,29 @@ def unmark_paid(kameti: str, membership: str, payout_month: int | None = None):
 	if not existing:
 		return {"ok": True}
 	p = frappe.get_doc("Installment Payment", existing)
+
+	# A row the admin created via mark_paid represents no real submission by
+	# the member — nothing was ever sent for approval. Delete it outright so
+	# an accidental "mark as paid" leaves no trace and, in particular, doesn't
+	# permanently freeze the kameti's editable settings (see
+	# kameti.api.kameti.settlement_started). A payment the member actually
+	# submitted is kept and rejected, preserving the audit trail.
+	member_submitted = bool(p.receipt_file or p.transaction_id or p.voice_note)
+	if not member_submitted:
+		frappe.delete_doc(
+			"Installment Payment", p.name, force=True,
+			ignore_permissions=True, delete_permanently=True,
+		)
+		frappe.db.commit()
+		return {"ok": True, "deleted": True}
+
 	p.status = "rejected"
 	p.reviewed_by = frappe.session.user
 	p.reviewed_on = now_datetime()
 	p.rejection_reason = "Reverted by admin"
 	p.save(ignore_permissions=True)
 	frappe.db.commit()
-	return {"ok": True}
+	return {"ok": True, "deleted": False}
 
 
 def _activity(recipient, kameti, type_, title, body, payload=None):

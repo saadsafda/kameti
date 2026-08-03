@@ -237,28 +237,91 @@ def get_committee(kameti: str):
 	}
 	if is_admin_caller:
 		payload["invite_code"] = committee.invite_code
+		# Drives the admin edit screen: once true, amount / start month /
+		# size are frozen and the kameti can only be archived, not deleted.
+		payload["edit_locked"] = settlement_started(kameti)
+		payload["archived"] = bool(committee.archived)
 	return payload
 
 
 @frappe.whitelist(methods=["POST"])
 def update_committee(kameti: str, **kwargs):
+	"""Admin edit. Cosmetic fields are always editable; anything that changes
+	the money or the schedule is frozen once the first payment is submitted.
+	See `settlement_started`."""
 	common.require_admin(kameti)
 	committee = frappe.get_doc("Kameti Committee", kameti)
-	editable = {"title", "urdu_title", "tone", "installment_amount",
-				"start_month", "wa_template_id", "invite_expires_at"}
-	if "members_count" in kwargs:
-		if committee.cycle_state != "not_started":
-			frappe.throw(
-				"members_count cannot change after the cycle has started.",
-				frappe.ValidationError,
-			)
-		editable.add("members_count")
+
+	# Always safe — these don't move money or shift the schedule.
+	editable = {"title", "urdu_title", "tone", "wa_template_id",
+				"invite_expires_at"}
+	# Structural fields: allowed only while nobody has submitted a payment.
+	structural = {"installment_amount", "start_month", "members_count"}
+
+	requested_structural = structural & set(kwargs)
+	if requested_structural and settlement_started(kameti):
+		frappe.throw(
+			"Payments have already been submitted for this kameti, so its "
+			"amount, start month and size can no longer be changed.",
+			frappe.ValidationError,
+		)
+	editable |= requested_structural
+
+	old_members_count = committee.members_count
+	old_start = committee.start_month
+	old_amount = committee.installment_amount
+
 	for k, v in kwargs.items():
 		if k in editable:
 			setattr(committee, k, v)
+
+	new_members_count = int(committee.members_count or 0)
+	if "members_count" in requested_structural:
+		if not (4 <= new_members_count <= 30):
+			frappe.throw("members_count must be between 4 and 30.", frappe.ValidationError)
+		# Shrinking below the seats people already hold would orphan members.
+		taken = frappe.db.count(
+			"Kameti Membership", {"kameti": kameti, "status": "active"},
+		)
+		if new_members_count < taken:
+			frappe.throw(
+				f"This kameti already has {taken} members — reduce the roster "
+				f"before lowering the size to {new_members_count}.",
+				frappe.ValidationError,
+			)
+		# A slot beyond the new size can't survive the resize.
+		orphan = frappe.db.sql(
+			"""SELECT month_index FROM `tabPayout Slot`
+			   WHERE kameti=%s AND month_index > %s AND recipient IS NOT NULL
+			   ORDER BY month_index LIMIT 1""",
+			(kameti, new_members_count),
+		)
+		if orphan:
+			frappe.throw(
+				f"Month {orphan[0][0]} is assigned to a member. Unassign it "
+				f"before shrinking this kameti to {new_members_count} months.",
+				frappe.ValidationError,
+			)
+		# duration always tracks size — one payout per member.
+		committee.duration_months = new_members_count
+
+	if "installment_amount" in requested_structural:
+		if float(committee.installment_amount or 0) <= 0:
+			frappe.throw("installment_amount must be > 0.", frappe.ValidationError)
+
 	committee.save(ignore_permissions=True)
+
+	# Keep the roster in step with the new configuration.
+	changed_schedule = (
+		("start_month" in requested_structural and getdate(old_start) != getdate(committee.start_month))
+		or ("members_count" in requested_structural and int(old_members_count or 0) != new_members_count)
+		or ("installment_amount" in requested_structural and float(old_amount or 0) != float(committee.installment_amount or 0))
+	)
+	if changed_schedule:
+		_resync_slots(committee)
+
 	frappe.db.commit()
-	return {"ok": True}
+	return {"ok": True, "edit_locked": settlement_started(kameti)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -269,7 +332,231 @@ def archive_committee(kameti: str):
 	return {"ok": True}
 
 
+@frappe.whitelist(methods=["POST"])
+def unarchive_committee(kameti: str):
+	"""Bring an archived kameti back into the hub."""
+	common.require_admin(kameti)
+	frappe.db.set_value("Kameti Committee", kameti, "archived", 0)
+	frappe.db.commit()
+	return {"ok": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_committee(kameti: str, confirm_title: str):
+	"""Permanently delete a kameti and everything under it.
+
+	Only possible before the first payment is submitted — once money is in
+	play the kameti is a financial record and may only be archived. The admin
+	must retype the exact title so a mis-tap can't wipe a group.
+	"""
+	common.require_admin(kameti)
+	committee = frappe.get_doc("Kameti Committee", kameti)
+
+	if settlement_started(kameti):
+		frappe.throw(
+			"Payments have already been submitted for this kameti, so it "
+			"cannot be deleted. Archive it instead.",
+			frappe.ValidationError,
+		)
+
+	if (confirm_title or "").strip() != (committee.title or "").strip():
+		frappe.throw(
+			"The name you typed doesn't match this kameti's name.",
+			frappe.ValidationError,
+		)
+
+	# Tell everyone but the admin before the records disappear.
+	admin_user = committee.admin
+	member_users = frappe.get_all(
+		"Kameti Membership",
+		filters={"kameti": kameti, "status": "active"},
+		pluck="user",
+	)
+	for u in {u for u in member_users if u and u != admin_user}:
+		_notify_deleted(u, committee.title)
+
+	# Children first, deepest link last, so no FK is left dangling.
+	for doctype in (
+		"Slot Share",
+		"Installment Payment",
+		"Payout Slot",
+		"Payment Account",
+		"Reminder",
+		"Activity",
+		"Kameti Membership",
+	):
+		for row in frappe.get_all(doctype, filters={"kameti": kameti}, pluck="name"):
+			frappe.delete_doc(doctype, row, force=True, ignore_permissions=True,
+							  delete_permanently=True)
+
+	frappe.delete_doc("Kameti Committee", kameti, force=True,
+					  ignore_permissions=True, delete_permanently=True)
+	frappe.db.commit()
+	return {"ok": True, "deleted": kameti}
+
+
+# ---- payment accounts -----------------------------------------------
+
+VALID_ACCOUNT_METHODS = ("easypaisa", "jazzcash", "bank")
+
+
+@frappe.whitelist(methods=["POST"])
+def add_payment_account(
+	kameti: str,
+	method: str,
+	account_number: str,
+	account_title: str,
+	bank_name: str | None = None,
+):
+	"""Add a collection account. Allowed at any time — members always need a
+	current place to send money, even mid-cycle."""
+	common.require_admin(kameti)
+	if method not in VALID_ACCOUNT_METHODS:
+		frappe.throw("Invalid payment method.", frappe.ValidationError)
+	if not (account_number or "").strip():
+		frappe.throw("Account number is required.", frappe.ValidationError)
+	if not (account_title or "").strip():
+		frappe.throw("Account title is required.", frappe.ValidationError)
+	if method == "bank" and not (bank_name or "").strip():
+		frappe.throw("Bank name is required for a bank account.", frappe.ValidationError)
+
+	last = frappe.db.sql(
+		"""SELECT MAX(display_order) FROM `tabPayment Account` WHERE kameti=%s""",
+		(kameti,),
+	)
+	next_order = ((last[0][0] if last and last[0][0] is not None else -1) + 1)
+
+	pa = frappe.new_doc("Payment Account")
+	pa.kameti = kameti
+	pa.method = method
+	pa.account_number = account_number.strip()
+	pa.account_title = account_title.strip()
+	pa.bank_name = (bank_name or "").strip() or None
+	pa.is_active = 1
+	pa.display_order = next_order
+	pa.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return {"ok": True, "id": pa.name}
+
+
+@frappe.whitelist(methods=["POST"])
+def update_payment_account(
+	account_id: str,
+	method: str | None = None,
+	account_number: str | None = None,
+	account_title: str | None = None,
+	bank_name: str | None = None,
+):
+	pa = frappe.get_doc("Payment Account", account_id)
+	common.require_admin(pa.kameti)
+
+	if method is not None:
+		if method not in VALID_ACCOUNT_METHODS:
+			frappe.throw("Invalid payment method.", frappe.ValidationError)
+		pa.method = method
+	if account_number is not None:
+		if not account_number.strip():
+			frappe.throw("Account number is required.", frappe.ValidationError)
+		pa.account_number = account_number.strip()
+	if account_title is not None:
+		if not account_title.strip():
+			frappe.throw("Account title is required.", frappe.ValidationError)
+		pa.account_title = account_title.strip()
+	if bank_name is not None:
+		pa.bank_name = bank_name.strip() or None
+	if pa.method == "bank" and not (pa.bank_name or "").strip():
+		frappe.throw("Bank name is required for a bank account.", frappe.ValidationError)
+
+	pa.save(ignore_permissions=True)
+	frappe.db.commit()
+	return {"ok": True}
+
+
+@frappe.whitelist(methods=["POST"])
+def remove_payment_account(account_id: str):
+	"""Deactivate rather than delete: past Installment Payments link to this
+	account and must keep resolving."""
+	pa = frappe.get_doc("Payment Account", account_id)
+	common.require_admin(pa.kameti)
+	frappe.db.set_value("Payment Account", account_id, "is_active", 0)
+	frappe.db.commit()
+	return {"ok": True}
+
+
 # ---- helpers --------------------------------------------------------
+
+def settlement_started(kameti: str) -> bool:
+	"""True once ANY payment exists for this kameti — pending, approved or
+	rejected.
+
+	The lock deliberately fires the moment the first member submits a payment
+	for approval, not when the admin approves it: from that point on members
+	are treating the kameti as live, and changing the amount or the schedule
+	under them would invalidate what they already paid against. Rejected rows
+	still count — an unlock-on-rejection rule would be trivially abusable.
+	"""
+	return bool(frappe.db.exists("Installment Payment", {"kameti": kameti}))
+
+
+def _resync_slots(committee) -> None:
+	"""Rebuild the Payout Slot rows after a size / start-month / amount edit.
+
+	Only reachable before any payment exists, so no approved money is ever
+	re-dated. Assigned recipients are preserved; slots past the new size are
+	dropped (the caller has already refused to shrink over an assigned slot).
+	"""
+	kameti = committee.name
+	count = int(committee.members_count or 0)
+	start = getdate(committee.start_month)
+	payout_amount = (count - 1) * float(committee.installment_amount or 0)
+
+	existing = {
+		s.month_index: s
+		for s in frappe.get_all(
+			"Payout Slot", filters={"kameti": kameti},
+			fields=["name", "month_index"],
+		)
+	}
+
+	for i in range(1, count + 1):
+		values = {
+			"month_date": add_months(start, i - 1),
+			"payout_amount": payout_amount,
+			"status": "current" if i == committee.current_month else "upcoming",
+		}
+		if i in existing:
+			frappe.db.set_value("Payout Slot", existing[i].name, values)
+		else:
+			slot = frappe.new_doc("Payout Slot")
+			slot.kameti = kameti
+			slot.month_index = i
+			for k, v in values.items():
+				setattr(slot, k, v)
+			slot.insert(ignore_permissions=True)
+
+	# Drop any slot that no longer fits the (smaller) kameti.
+	for month_index, s in existing.items():
+		if month_index > count:
+			for share in frappe.get_all(
+				"Slot Share", filters={"payout_slot": s.name}, pluck="name",
+			):
+				frappe.delete_doc("Slot Share", share, force=True,
+								  ignore_permissions=True)
+			frappe.delete_doc("Payout Slot", s.name, force=True,
+							  ignore_permissions=True)
+
+
+def _notify_deleted(user: str, title: str) -> None:
+	"""In-app notice that a kameti the member belonged to was deleted. Written
+	with no `kameti` link because the committee row is about to disappear."""
+	a = frappe.new_doc("Activity")
+	a.recipient = user
+	a.type = "announcement"
+	a.title = "Kameti deleted"
+	a.body = f'"{title}" was deleted by its admin.'
+	a.is_read = 0
+	a.insert(ignore_permissions=True)
+
 
 def _link_slot(kameti: str, month_index: int, membership_id: str):
 	slot = frappe.db.get_value(

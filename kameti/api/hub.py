@@ -16,6 +16,7 @@ def get_my_kametis():
 	)
 
 	result = []
+	archived = []
 	total_contributions = 0
 	contribution_count = 0
 	for m in memberships:
@@ -26,7 +27,25 @@ def get_my_kametis():
 			 "archived"],
 			as_dict=True,
 		)
-		if not c or c.archived:
+		if not c:
+			continue
+		# Archived kametis stay out of the main list, but the admin gets them
+		# back in a separate bucket so archiving is reversible from the app.
+		if c.archived:
+			if m.role == "admin":
+				archived.append({
+					"id": c.name,
+					"title": c.title,
+					"urdu_title": c.urdu_title,
+					"short_code": c.short_code,
+					"tone": c.tone,
+					"role": m.role,
+					"members_count": c.members_count,
+					"installment_amount": c.installment_amount,
+					"current_month": c.current_month,
+					"duration_months": c.duration_months,
+					"cycle_state": c.cycle_state,
+				})
 			continue
 
 		recipient = _current_recipient(m.kameti, c.current_month)
@@ -71,6 +90,7 @@ def get_my_kametis():
 		"owed_count": contribution_count,
 		"unread_notifications": unread,
 		"kametis": result,
+		"archived_kametis": archived,
 	}
 
 
