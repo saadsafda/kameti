@@ -44,17 +44,26 @@ def list(kameti: str, query: str | None = None):
 def add(
 	kameti: str,
 	display_name: str,
-	phone: str,
+	phone: str | None = None,
 	urdu_name: str | None = None,
 	payout_month: int | None = None,
 	avatar_tone: str | None = None,
 ):
+	"""Add one member to an existing kameti.
+
+	`phone` is optional, matching create_committee: a person added by name
+	alone is a "ledger" member, and their membership auto-links when they
+	later sign up with a matching phone.
+	"""
 	common.require_admin(kameti)
-	common.validate_e164(phone)
+	phone = (phone or "").strip()
+	if phone:
+		common.validate_e164(phone)
 	if not display_name or not display_name.strip():
 		frappe.throw("Display name is required.", frappe.ValidationError)
 
-	if frappe.db.exists(
+	# Only a real phone can collide; ledger members share the empty string.
+	if phone and frappe.db.exists(
 		"Kameti Membership",
 		{"kameti": kameti, "phone": phone, "status": "active"},
 	):
@@ -68,12 +77,19 @@ def add(
 		):
 			frappe.throw("That payout month is already taken.", frappe.ValidationError)
 
-	existing_user = common.user_name_for_phone(phone)
+	existing_user = common.user_name_for_phone(phone) if phone else None
 
-	removed_name = frappe.db.get_value(
-		"Kameti Membership",
-		{"kameti": kameti, "phone": phone, "status": "removed"},
-		"name",
+	# Re-adding someone previously removed revives their old membership, but
+	# only a phone identifies them — ledger members all share an empty phone,
+	# so match on one would revive an unrelated person.
+	removed_name = (
+		frappe.db.get_value(
+			"Kameti Membership",
+			{"kameti": kameti, "phone": phone, "status": "removed"},
+			"name",
+		)
+		if phone
+		else None
 	)
 
 	if removed_name:
