@@ -1,0 +1,201 @@
+{
+ "actions": [],
+ "autoname": "format:SNOTIF-{#####}",
+ "creation": "2026-08-13 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "enabled",
+  "column_break_head",
+  "scheduled_on",
+  "repeat_annually",
+  "section_break_audience",
+  "audience",
+  "country_code",
+  "kameti",
+  "column_break_audience",
+  "recipients",
+  "section_break_message",
+  "notification_title",
+  "message",
+  "activity_type",
+  "section_break_status",
+  "status",
+  "last_sent_on",
+  "sent_count",
+  "error"
+ ],
+ "fields": [
+  {
+   "description": "Internal label, e.g. \"Independence Day 2026\". Not shown to users.",
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "description": "Uncheck to pause without deleting.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_standard_filter": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Site timezone. Sends on the first scheduler run at or after this time.",
+   "fieldname": "scheduled_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Send On",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "description": "Repeat every year on the same month/day and time. Use for fixed holidays like 14 August.",
+   "fieldname": "repeat_annually",
+   "fieldtype": "Check",
+   "label": "Repeat Annually"
+  },
+  {
+   "fieldname": "section_break_audience",
+   "fieldtype": "Section Break",
+   "label": "Audience"
+  },
+  {
+   "default": "All Users",
+   "fieldname": "audience",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Send To",
+   "options": "All Users\nBy Country\nSpecific Users\nKameti Members",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.audience == 'By Country'",
+   "description": "Matched against the phone number's dial prefix, e.g. +92 for Pakistan.",
+   "fieldname": "country_code",
+   "fieldtype": "Select",
+   "label": "Country",
+   "mandatory_depends_on": "eval:doc.audience == 'By Country'",
+   "options": "\n+92 Pakistan\n+91 India\n+93 Afghanistan\n+880 Bangladesh\n+971 United Arab Emirates\n+966 Saudi Arabia\n+974 Qatar\n+968 Oman\n+973 Bahrain\n+965 Kuwait\n+44 United Kingdom\n+1 United States / Canada\n+61 Australia\n+60 Malaysia\n+90 Turkey"
+  },
+  {
+   "depends_on": "eval:doc.audience == 'Kameti Members'",
+   "fieldname": "kameti",
+   "fieldtype": "Link",
+   "label": "Kameti",
+   "mandatory_depends_on": "eval:doc.audience == 'Kameti Members'",
+   "options": "Kameti Committee"
+  },
+  {
+   "fieldname": "column_break_audience",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.audience == 'Specific Users'",
+   "fieldname": "recipients",
+   "fieldtype": "Table",
+   "label": "Recipients",
+   "options": "Scheduled Notification Recipient"
+  },
+  {
+   "fieldname": "section_break_message",
+   "fieldtype": "Section Break",
+   "label": "Message"
+  },
+  {
+   "description": "Push notification heading. Emoji allowed.",
+   "fieldname": "notification_title",
+   "fieldtype": "Data",
+   "label": "Notification Title",
+   "reqd": 1
+  },
+  {
+   "description": "Body text. Use {name} to insert the recipient's display name.",
+   "fieldname": "message",
+   "fieldtype": "Small Text",
+   "label": "Message",
+   "reqd": 1
+  },
+  {
+   "default": "announcement",
+   "description": "Drives the icon the mobile app shows.",
+   "fieldname": "activity_type",
+   "fieldtype": "Select",
+   "label": "Activity Type",
+   "options": "announcement\nholiday",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_status",
+   "fieldtype": "Section Break",
+   "label": "Delivery"
+  },
+  {
+   "default": "scheduled",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "no_copy": 1,
+   "options": "scheduled\nsent\nfailed\ncancelled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_sent_on",
+   "fieldtype": "Datetime",
+   "label": "Last Sent On",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Recipients reached on the last run.",
+   "fieldname": "sent_count",
+   "fieldtype": "Int",
+   "label": "Sent Count",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error",
+   "no_copy": 1,
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-08-13 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Kameti",
+ "name": "Scheduled Notification",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 0,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

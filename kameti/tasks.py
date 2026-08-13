@@ -334,6 +334,41 @@ def send_birthday_wishes():
 	frappe.db.commit()
 
 
+def dispatch_scheduled_notifications():
+	"""Hourly: fire every due `Scheduled Notification`.
+
+	Due means enabled, still `scheduled`, and `scheduled_on` has passed. Each
+	row resolves its own audience and inserts Activities; the
+	`Activity.after_insert` hook fans them out to FCM. A row that raises is
+	marked `failed` with the error rather than aborting the whole batch.
+	"""
+	due = frappe.get_all(
+		"Scheduled Notification",
+		filters={
+			"enabled": 1,
+			"status": "scheduled",
+			"scheduled_on": ("<=", now_datetime()),
+		},
+		pluck="name",
+	)
+	for name in due:
+		doc = frappe.get_doc("Scheduled Notification", name)
+		try:
+			count = doc.dispatch()
+			doc.mark_sent(count)
+			frappe.db.commit()
+		except Exception as e:
+			frappe.db.rollback()
+			frappe.log_error(
+				title=f"Scheduled Notification {name} failed",
+				message=frappe.get_traceback(),
+			)
+			frappe.db.set_value("Scheduled Notification", name, {
+				"status": "failed", "error": str(e)[:140],
+			})
+			frappe.db.commit()
+
+
 def archive_completed_kametis():
 	"""Set cycle_state=completed when all payout slots are paid."""
 	rows = frappe.db.sql(

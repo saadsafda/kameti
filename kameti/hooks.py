@@ -56,6 +56,7 @@ scheduler_events = {
 	},
 	"hourly": [
 		"kameti.tasks.dispatch_reminder_queue",
+		"kameti.tasks.dispatch_scheduled_notifications",
 	],
 	"daily": [
 		"kameti.tasks.activate_due_kametis",
