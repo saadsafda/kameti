@@ -365,6 +365,16 @@ def delete_committee(kameti: str, confirm_title: str):
 			frappe.ValidationError,
 		)
 
+	purge_committee(committee)
+	frappe.db.commit()
+	return {"ok": True, "deleted": kameti}
+
+
+def purge_committee(committee) -> None:
+	"""Hard-delete a committee and every row under it, notifying all members
+	except the admin first. Caller is responsible for the settlement check and
+	the commit. Shared by `delete_committee` and `auth.delete_account`."""
+	kameti = committee.name
 	# Tell everyone but the admin before the records disappear.
 	admin_user = committee.admin
 	member_users = frappe.get_all(
@@ -391,8 +401,6 @@ def delete_committee(kameti: str, confirm_title: str):
 
 	frappe.delete_doc("Kameti Committee", kameti, force=True,
 					  ignore_permissions=True, delete_permanently=True)
-	frappe.db.commit()
-	return {"ok": True, "deleted": kameti}
 
 
 # ---- payment accounts -----------------------------------------------

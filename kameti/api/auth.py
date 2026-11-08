@@ -2,6 +2,7 @@
 
 import frappe
 from frappe.exceptions import DuplicateEntryError
+from frappe.model.rename_doc import rename_doc
 
 from kameti.utils import common, otp, whatsapp
 
@@ -171,7 +172,148 @@ def sign_out():
 	return {"ok": True}
 
 
+@frappe.whitelist(methods=["POST"])
+def delete_account():
+	"""Permanently delete the caller's account (App Store Guideline 5.1.1(v)).
+
+	Personal data is deleted outright: Kameti Profile, profile photo, push
+	token, the caller's own notifications and OTP rows. The User row itself
+	is anonymised and disabled rather than hard-deleted, because other members'
+	financial records (payments reviewed, reminders sent, completed kametis)
+	link to it; the rename rewrites every link, owner and modified_by so the
+	phone-derived id disappears from the database.
+
+	Kametis:
+	- The caller runs one with payments that is still in progress → refused
+	  (409). They must transfer ownership or finish/archive it first, otherwise
+	  the other members would be left with an orphaned, unmanageable group.
+	- The caller runs one with no payments yet → deleted entirely (members are
+	  notified), exactly like `kameti.delete_committee`.
+	- Any other kameti the caller is in: if no payments yet, their membership
+	  is removed and payout slots freed; if payments exist, the membership is
+	  kept as an unlinked ledger entry (name and phone as the organiser
+	  entered them) so the group's payout history stays correct.
+	"""
+	from kameti.api.kameti import purge_committee, settlement_started
+
+	user_name = common.require_session_user()
+	if user_name == "Administrator" or "System Manager" in frappe.get_roles(user_name):
+		frappe.throw("System users cannot be deleted from the app.", frappe.PermissionError)
+
+	running = [
+		c.title for c in frappe.get_all(
+			"Kameti Committee",
+			filters={"admin": user_name, "archived": 0, "cycle_state": ("!=", "completed")},
+			fields=["name", "title"],
+		)
+		if settlement_started(c.name)
+	]
+	if running:
+		names = ", ".join(f'"{t}"' for t in running)
+		frappe.throw(
+			f"You are the admin of {names}, which already has payments. Transfer "
+			"ownership to another member (or archive it) before deleting your account.",
+			DuplicateEntryError,  # → 409 / ApiConflictException in the app
+		)
+
+	# 1. Kametis the caller runs that have no money in them: delete outright.
+	for name in frappe.get_all("Kameti Committee", filters={"admin": user_name}, pluck="name"):
+		if not settlement_started(name):
+			purge_committee(frappe.get_doc("Kameti Committee", name))
+
+	# 2. Every remaining membership: remove, or keep as an unlinked ledger row.
+	for mem in frappe.get_all(
+		"Kameti Membership", filters={"user": user_name}, fields=["name", "kameti", "status"],
+	):
+		if mem.status == "active" and not settlement_started(mem.kameti):
+			_release_membership_slots(mem.name, mem.kameti)
+			frappe.db.set_value("Kameti Membership", mem.name, {
+				"status": "removed",
+				"removed_on": frappe.utils.now_datetime(),
+				"user": None,
+				"phone": "",
+				"payout_month": None,
+				"assignment_method": None,
+			})
+		else:
+			frappe.db.set_value("Kameti Membership", mem.name, "user", None)
+
+	# 3. Personal data.
+	profile = frappe.db.get_value(
+		"Kameti Profile", {"user": user_name}, ["name", "phone", "avatar_image"], as_dict=True,
+	)
+	phone = (profile and profile.phone) or (
+		common.phone_for_email(user_name) if user_name.endswith("@kameti.local") else None
+	)
+	if profile:
+		if profile.avatar_image:
+			for f in frappe.get_all("File", filters={"file_url": profile.avatar_image}, pluck="name"):
+				frappe.delete_doc("File", f, force=True, ignore_permissions=True)
+		frappe.delete_doc("Kameti Profile", profile.name, force=True, ignore_permissions=True,
+						  delete_permanently=True)
+	frappe.db.delete("Activity", {"recipient": user_name})
+	if phone:
+		frappe.db.delete("Phone OTP", {"phone": phone})
+	for row in frappe.get_all(
+		"Scheduled Notification Recipient", filters={"user": user_name}, pluck="name",
+	):
+		frappe.db.set_value("Scheduled Notification Recipient", row,
+							{"display_name": "Deleted user", "phone": ""}, update_modified=False)
+
+	# 4. Anonymise + disable the User. Field updates happen BEFORE the rename:
+	# anything saved after it would stamp the old id back into modified_by.
+	anon = f"deleted-{frappe.generate_hash(length=12)}@kameti.local"
+	user = frappe.get_doc("User", user_name)
+	user.update({
+		"enabled": 0,
+		"first_name": "Deleted user",
+		"middle_name": None,
+		"last_name": None,
+		"username": None,
+		"phone": None,
+		"mobile_no": None,
+		"birth_date": None,
+		"gender": None,
+		"user_image": None,
+		"api_key": None,
+		"api_secret": None,
+	})
+	user.flags.ignore_permissions = True
+	user.save()
+	# The low-level rename (not frappe.rename_doc) is the one that accepts
+	# ignore_permissions — the caller is a Website User renaming themselves.
+	rename_doc(doctype="User", old=user_name, new=anon, force=True, ignore_permissions=True,
+			   show_alert=False, rebuild_search=False)
+	frappe.db.set_value("User", anon, "email", anon, update_modified=False)
+	# rename_doc leaves "renamed from <old id>" comments and Version diffs on
+	# the User and on docs named after it (e.g. Notification Settings).
+	frappe.db.delete("Comment", {"reference_name": anon})
+	frappe.db.delete("Version", {"docname": anon})
+	frappe.db.delete("Activity Log", {"user": anon})
+	frappe.db.commit()
+	return {"ok": True}
+
+
 # ---- helpers ------------------------------------------------------
+
+def _release_membership_slots(membership: str, kameti: str) -> None:
+	"""Free every payout slot and split share a membership holds (a member can
+	hold several months — the "double share" case)."""
+	from kameti.api.roster import drop_slot_share
+
+	for share in frappe.get_all(
+		"Slot Share", filters={"kameti": kameti, "membership": membership},
+		fields=["name", "payout_slot"],
+	):
+		month = frappe.db.get_value("Payout Slot", share.payout_slot, "month_index")
+		drop_slot_share(share.payout_slot, share.name, membership, month)
+	for slot in frappe.get_all(
+		"Payout Slot", filters={"kameti": kameti, "recipient": membership}, pluck="name",
+	):
+		frappe.db.set_value("Payout Slot", slot, {
+			"recipient": None, "assignment_method": None, "assigned_on": None,
+		})
+
 
 def _resolve_user_for_phone(phone: str) -> tuple[str | None, bool]:
 	"""Return (user_name, has_profile) for a phone number."""

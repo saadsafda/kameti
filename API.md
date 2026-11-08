@@ -119,6 +119,22 @@ Clears `api_key`/`api_secret` on the User, invalidating all sessions.
 **Request**: `{}`
 **Response**: `{ "ok": true }`
 
+### POST `delete_account` — auth
+
+Permanently deletes the caller's account (App Store Guideline 5.1.1(v)).
+
+- **Deleted:** Kameti Profile, avatar file, FCM token, the caller's own Activity rows, Phone OTP rows; recipient name/phone on Scheduled Notification Recipient rows are blanked.
+- **Kametis the caller admins with no payments:** deleted outright (same as `kameti.delete_committee`; members are notified).
+- **Other memberships:** no payments in that kameti → `status=removed`, unlinked, phone cleared, payout slots/shares freed. Payments exist → kept as an unlinked ledger row (organiser-entered name/phone) so payout history stays correct; it re-links if the same phone signs up again.
+- **User:** disabled, keys cleared, personal fields blanked, then renamed to `deleted-<hash>@kameti.local` (every Link/owner/modified_by follows). "Renamed from" Comments and Versions are removed.
+
+**Request**: `{}`
+**Response**: `{ "ok": true }`
+
+**Errors**
+- `409 DuplicateEntryError` — caller admins a kameti that has payments and is neither completed nor archived. Message names the kameti(s); transfer ownership or archive first.
+- `403 PermissionError` — Administrator / System Manager accounts.
+
 ---
 
 ## 2. Hub (`kameti.api.hub`)
@@ -860,7 +876,7 @@ In `console` mode the plaintext lives in `Phone OTP.code` — readable at `/app/
 | `OtpScreen` | `auth.verify_otp` |
 | `RegisterScreen` | `auth.complete_registration`, `upload_file` |
 | `MyKametisScreen` | `hub.get_my_kametis`, `notifications.list` |
-| `ProfileScreen` | `profile.get_profile`, `profile.update_profile`, `auth.sign_out` |
+| `ProfileScreen` | `profile.get_profile`, `profile.update_profile`, `auth.sign_out`, `auth.delete_account` |
 | `SettingsScreen` | `settings.update` |
 | `CreateCommitteeScreen` | `kameti.create_committee` |
 | `RosterScreen` | `roster.get`, `roster.assign_manual` |

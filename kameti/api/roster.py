@@ -387,6 +387,15 @@ def remove_slot_share(kameti: str, month_index: int, membership_id: str):
 	if not share:
 		frappe.throw("Share not found for this member.", frappe.ValidationError)
 
+	drop_slot_share(slot.name, share, membership_id, month_index)
+	frappe.db.commit()
+	return {"ok": True}
+
+
+def drop_slot_share(slot_name: str, share: str, membership_id: str, month_index: int) -> None:
+	"""Delete one Slot Share and revert the slot to single/empty if needed.
+	No permission check or commit — callers own both. Shared by
+	`remove_slot_share` and `auth.delete_account`."""
 	frappe.delete_doc("Slot Share", share, ignore_permissions=True)
 	# Only clear payout_month when this co-holder's primary slot IS this month
 	# (i.e. they don't own a different solo slot).
@@ -397,7 +406,7 @@ def remove_slot_share(kameti: str, month_index: int, membership_id: str):
 		})
 
 	remaining = frappe.get_all(
-		"Slot Share", filters={"payout_slot": slot.name},
+		"Slot Share", filters={"payout_slot": slot_name},
 		fields=["name", "membership", "share_fraction"],
 	)
 
@@ -405,7 +414,7 @@ def remove_slot_share(kameti: str, month_index: int, membership_id: str):
 		# Revert to single-recipient mode
 		sole = remaining[0]
 		frappe.db.set_value(
-			"Payout Slot", slot.name,
+			"Payout Slot", slot_name,
 			{
 				"recipient": sole.membership,
 				"is_split": 0,
@@ -416,7 +425,7 @@ def remove_slot_share(kameti: str, month_index: int, membership_id: str):
 		frappe.delete_doc("Slot Share", sole.name, ignore_permissions=True)
 	elif len(remaining) == 0:
 		frappe.db.set_value(
-			"Payout Slot", slot.name,
+			"Payout Slot", slot_name,
 			{
 				"recipient": None,
 				"is_split": 0,
@@ -424,9 +433,6 @@ def remove_slot_share(kameti: str, month_index: int, membership_id: str):
 				"assigned_on": None,
 			},
 		)
-
-	frappe.db.commit()
-	return {"ok": True}
 
 
 # ---- helpers ---------------------------------------------------------------
