@@ -611,6 +611,8 @@ Returns `{ message: { file_url: "/private/files/xyz.jpg", ... } }`. Send the `fi
 
 ### POST `submit_payment` — member
 
+**Amount rule** (`kameti/utils/shares.py`, the single source used by payments, dashboards and reminders): every payout slot is one share. A member owes `installment × shares held` every month until the kameti ends, minus the share(s) receiving that month's payout. Two full slots → 2× (1× in each of their payout months); a half slot → 0.5× (0 in the month their split slot pays out); no slot yet → 1×. Amounts are rounded to whole rupees. All members' dues for a month always add up to the payout pot `(members_count − 1) × installment`. `get_member_dashboard.this_installment.amount` is the exact amount to send; its `status` is `"receiver"` when nothing is owed.
+
 **Request**
 ```json
 {
@@ -856,7 +858,7 @@ In `console` mode the plaintext lives in `Phone OTP.code` — readable at `/app/
 | `auth.verify_otp` | OTP expired | 410 | `ValidationError` |
 | `auth.request_otp` | < 60s since last request | 429 | `RateLimitExceededError` |
 | `auth.request_otp` | > 5 requests in an hour | 429 | `RateLimitExceededError` |
-| `pay.submit_payment` | Amount ≠ installment_amount | 400 | `ValidationError` |
+| `pay.submit_payment` | Amount ≠ member's share-based due (or nothing due: receiving month) | 400 | `ValidationError` |
 | `pay.submit_payment` | Existing pending payment | 409 | `ValidationError` |
 | `pay.approve_payment` | Caller not admin | 403 | `PermissionError` |
 | `join.join_by_code` | Already a member | 400 | `ValidationError` |

@@ -3,7 +3,7 @@
 import frappe
 from frappe.utils import add_to_date, fmt_money, getdate, now_datetime
 
-from kameti.utils import common
+from kameti.utils import common, shares
 
 
 def activate_due_kametis():
@@ -100,16 +100,16 @@ def send_due_reminders():
 		due_on = common.due_date_for_month(c.start_month, c.current_month)
 		if not due_on or (due_on - today).days != 3:
 			continue
-		for row in _unpaid_members(c.name, c.current_month):
+		for row in _unpaid_members(c.name, c.current_month, c.installment_amount):
 			if row["state"] == "rejected":
 				payload = (
-					f"Your payment of {c.installment_amount} was rejected"
+					f"Your payment of {row['amount']} was rejected"
 					+ (f' ({row["reason"]})' if row["reason"] else "")
 					+ ". Please resend proof — due in 3 days."
 				)
 			else:
 				payload = (
-					f"Reminder: your installment of {c.installment_amount} is due in 3 days."
+					f"Reminder: your installment of {row['amount']} is due in 3 days."
 				)
 			r = frappe.new_doc("Reminder")
 			r.kameti = c.name
@@ -146,10 +146,11 @@ def send_due_push_notifications():
 		if days_left not in (2, 0):
 			continue
 
-		amount = fmt_money(c.installment_amount or 0, currency="PKR")
 		when = f"on {due_on.strftime('%d %b')}" if days_left == 2 else "today"
 
-		for row in _unpaid_members(c.name, c.current_month):
+		for row in _unpaid_members(c.name, c.current_month, c.installment_amount):
+			# Each member's own amount: 2 slots → 2×, half slot → 0.5×.
+			amount = fmt_money(row["amount"], currency="PKR")
 			user = frappe.db.get_value(
 				"Kameti Membership", row["membership"], "user",
 			)
@@ -205,14 +206,16 @@ def send_due_push_notifications():
 	frappe.db.commit()
 
 
-def _unpaid_members(kameti: str, month: int) -> list[dict]:
+def _unpaid_members(kameti: str, month: int, installment: float) -> list[dict]:
 	"""Active memberships still owing for `month`, and why.
 
-	Excludes that month's payout recipient (they receive, not pay) and anyone
-	with a pending or approved payment — a pending receipt is awaiting admin
-	review, so nagging them would be wrong.
+	Excludes anyone who owes nothing this month (every share they hold is
+	receiving the payout) and anyone with a pending or approved payment — a
+	pending receipt is awaiting admin review, so nagging them would be wrong.
 
-	Each row is `{"membership", "state", "reason"}` where `state` is:
+	Each row is `{"membership", "amount", "state", "reason"}`. `amount` is what
+	this member owes for the month from the shares they hold (utils/shares.py:
+	2 slots → 2× the installment, half slot → 0.5×). `state` is:
 	  "none"     — never submitted a receipt.
 	  "rejected" — submitted, but the admin rejected it; `reason` holds the
 	               admin's rejection note so the message can reference it.
@@ -222,12 +225,10 @@ def _unpaid_members(kameti: str, month: int) -> list[dict]:
 		filters={"kameti": kameti, "status": "active"},
 		pluck="name",
 	)
-	recipient = frappe.db.get_value(
-		"Payout Slot", {"kameti": kameti, "month_index": month}, "recipient",
-	)
 	out = []
 	for m in members:
-		if m == recipient:
+		amount = shares.monthly_due(kameti, m, month, installment)
+		if not amount:
 			continue
 		if frappe.db.exists("Installment Payment", {
 			"kameti": kameti, "payer": m, "payout_month": month,
@@ -247,11 +248,12 @@ def _unpaid_members(kameti: str, month: int) -> list[dict]:
 		if last_rejected:
 			out.append({
 				"membership": m,
+				"amount": amount,
 				"state": "rejected",
 				"reason": (last_rejected[0].get("rejection_reason") or "").strip(),
 			})
 		else:
-			out.append({"membership": m, "state": "none", "reason": ""})
+			out.append({"membership": m, "amount": amount, "state": "none", "reason": ""})
 	return out
 
 

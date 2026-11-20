@@ -3,7 +3,7 @@
 import frappe
 from frappe.utils import add_months, date_diff, formatdate, getdate, today
 
-from kameti.utils import common
+from kameti.utils import common, shares
 
 
 @frappe.whitelist(methods=["GET"])
@@ -42,23 +42,23 @@ def get_member_dashboard(kameti: str):
 	due_on = _due_date(committee, cm)
 	days_left = date_diff(due_on, today()) if due_on else None
 
-	# Determine installment amount for this member (may be fractional for split slots)
-	installment_amount = committee.installment_amount
-	share_fraction = None
+	# What this member pays per month: installment × the shares they hold
+	# (see utils/shares.py). Before the kameti starts, show the regular amount.
+	units = shares.share_units(kameti, mem.name)
+	share_fraction = units if units != 1 else None
 	if cm:
-		slot_name = frappe.db.get_value(
-			"Payout Slot", {"kameti": kameti, "month_index": cm}, "name",
+		installment_amount = shares.monthly_due(
+			kameti, mem.name, cm, committee.installment_amount,
 		)
-		if slot_name:
-			share_fraction = frappe.db.get_value(
-				"Slot Share", {"payout_slot": slot_name, "membership": mem.name}, "share_fraction",
-			)
-			if share_fraction:
-				installment_amount = committee.installment_amount * share_fraction
+	else:
+		installment_amount = round(float(committee.installment_amount or 0) * units)
 
 	status_label = "upcoming"
 	if cm:
 		status_label = existing.status if existing and existing.status != "rejected" else "unpaid"
+		if not installment_amount:
+			# All their shares are receiving this month — nothing to pay.
+			status_label = "receiver"
 
 	# Collect ALL payout slots this member is involved in:
 	# 1. Solo slot (recipient field)
@@ -106,14 +106,6 @@ def get_member_dashboard(kameti: str):
 
 	# Sort by month so the nearest payout comes first
 	your_payouts.sort(key=lambda x: x["month_index"])
-
-	# Also compute total monthly obligation for this member across ALL slots
-	# (their own slot full amount + any co-holder fractions)
-	# This is informational — actual payment validation happens per-month in pay.py.
-	total_monthly_due = committee.installment_amount  # base: what all other members pay
-	# If they're a co-holder in any slot that is active this month, their share
-	# replaces/adds to the base. For display we show installment_amount for this month.
-	# The installment_amount shown is what they owe THIS month (already computed above).
 
 	return {
 		"you": {
@@ -170,10 +162,6 @@ def _build_admin(committee) -> dict:
 				pluck="membership",
 			))
 
-	recipient_id = (
-		current_slot.recipient if current_slot and not slot_is_split else None
-	)
-
 	latest_status: dict[str, str] = {}
 	if cm:
 		rows = frappe.db.sql(
@@ -202,25 +190,36 @@ def _build_admin(committee) -> dict:
 	unpaid_ids: list[str] = []
 	non_recipient_count = 0
 
-	for m in members:
-		is_sole_recipient = (m.name == recipient_id)
-		is_co_holder = m.name in co_holder_ids
+	payout_amount = 0.0
+	if current_slot:
+		payout_amount = float(frappe.db.get_value(
+			"Payout Slot", current_slot.name, "payout_amount",
+		) or 0)
 
-		if is_sole_recipient:
+	for m in members:
+		is_co_holder = m.name in co_holder_ids
+		# Amount owed this month from the shares they hold (utils/shares.py):
+		# 2 slots → 2×, half slot → 0.5×, minus any share receiving now.
+		receiving = shares.receiving_units(kameti, m.name, cm) if cm else 0.0
+		if cm:
+			amount = shares.monthly_due(kameti, m.name, cm, committee.installment_amount)
+		else:
+			amount = round(float(committee.installment_amount or 0)
+						   * shares.share_units(kameti, m.name))
+
+		if cm and receiving and not amount:
+			# Every share they hold is receiving this month — nothing to pay.
 			out_members.append({
 				"membership_id": m.name,
 				"display_name": m.display_name,
 				"initials": m.initials,
 				"tone": m.avatar_tone,
-				"amount": (committee.members_count - 1) * committee.installment_amount,
+				"amount": round(payout_amount * receiving),
 				"status": "receiver",
 			})
 			continue
 
 		non_recipient_count += 1
-		# Co-holders pay their fraction; regular members pay full amount
-		frac = share_fractions.get(m.name, 1.0) if is_co_holder else 1.0
-		amount = committee.installment_amount * frac
 		total_due += amount
 
 		raw = latest_status.get(m.name)
@@ -242,9 +241,13 @@ def _build_admin(committee) -> dict:
 			"amount": amount,
 			"status": status,
 		}
+		if receiving:
+			# Receives part of this month's payout but still owes for their
+			# other share(s), e.g. a 2-slot holder in one of their months.
+			row["is_receiver"] = True
 		if is_co_holder:
 			row["is_co_holder"] = True
-			row["share_fraction"] = frac
+			row["share_fraction"] = share_fractions.get(m.name, 1.0)
 		out_members.append(row)
 
 	due_on = _due_date(committee, cm)

@@ -3,7 +3,7 @@
 import frappe
 from frappe.utils import add_months, formatdate
 
-from kameti.utils import common, templates
+from kameti.utils import common, shares, templates
 
 
 VALID_CHANNELS = ("sms", "whatsapp", "push", "in_app")
@@ -42,12 +42,16 @@ def get_template(kameti: str, membership_id: str, channel: str, language: str = 
 		due_str = formatdate(due_date, "d MMM")
 
 	name = mem.urdu_name if language == "ur" and mem.urdu_name else mem.display_name
+	# This member's own amount: 2 slots → 2× the installment, half slot → 0.5×.
+	amount = shares.monthly_due(
+		kameti, membership_id, cm, committee.installment_amount,
+	)
 	body = templates.render_reminder(
 		channel=channel,
 		language=language,
 		member_name=name,
 		kameti_title=committee.title,
-		amount=committee.installment_amount,
+		amount=amount,
 		due_date=due_str,
 		admin_name=admin_name,
 		payment_account=account,

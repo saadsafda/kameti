@@ -3,8 +3,7 @@
 import frappe
 from frappe.utils import now_datetime, pretty_date, time_diff_in_seconds
 
-from kameti.utils import common
-from kameti.api.roster import get_member_share_for_slot
+from kameti.utils import common, shares
 
 
 VALID_METHODS = ("easypaisa", "jazzcash", "bank", "cash", "other")
@@ -67,27 +66,19 @@ def submit_payment(
 	if committee_amt is None:
 		frappe.throw("Installment amount not configured.", frappe.ValidationError)
 
-	# Check if this member has a fractional share in the slot for payout_month
-	slot_name = frappe.db.get_value(
-		"Payout Slot",
-		{"kameti": kameti, "month_index": payout_month},
-		"name",
-	)
-	share_fraction = None
-	if slot_name:
-		share_fraction = get_member_share_for_slot(slot_name, mem.name)
-
-	expected_amount = float(committee_amt) * (share_fraction if share_fraction else 1.0)
-	if abs(amount - expected_amount) > 0.01:
-		if share_fraction:
-			frappe.throw(
-				f"Amount must be {expected_amount:,.0f} (your {share_fraction * 100:.0f}% share of the installment).",
-				frappe.ValidationError,
-			)
-		else:
-			frappe.throw(
-				"Amount must match the installment amount.", frappe.ValidationError,
-			)
+	# What this member owes for the month, from the shares they hold
+	# (2 slots → 2×, half slot → 0.5×, minus any share receiving this month).
+	expected_amount = shares.monthly_due(kameti, mem.name, payout_month, committee_amt)
+	if not expected_amount:
+		frappe.throw(
+			"You receive the payout this month, so there is nothing to pay.",
+			frappe.ValidationError,
+		)
+	if abs(amount - expected_amount) > 0.5:
+		frappe.throw(
+			f"Amount must be {expected_amount:,.0f} for this month.",
+			frappe.ValidationError,
+		)
 
 	if frappe.db.exists(
 		"Installment Payment",
@@ -289,22 +280,16 @@ def mark_paid(
 	if not payout_month:
 		frappe.throw("This kameti has not started yet.", frappe.ValidationError)
 
-	# A member cannot pay for the month in which they receive the payout.
-	slot_recipient = frappe.db.get_value(
-		"Payout Slot", {"kameti": kameti, "month_index": payout_month}, "recipient",
+	# Nothing is owed for a month where all of a member's shares are receiving.
+	due = shares.monthly_due(
+		kameti, membership, payout_month, committee.installment_amount,
 	)
-	if slot_recipient == membership:
+	if not due:
 		frappe.throw(
 			"This member is the receiver this month.", frappe.ValidationError,
 		)
-
-	# Honour a fractional (co-holder) share if present.
-	slot_name = frappe.db.get_value(
-		"Payout Slot", {"kameti": kameti, "month_index": payout_month}, "name",
-	)
-	share_fraction = get_member_share_for_slot(slot_name, membership) if slot_name else None
 	if amount is None:
-		amount = float(committee.installment_amount or 0) * (share_fraction or 1.0)
+		amount = due
 	amount = float(amount)
 
 	now = now_datetime()

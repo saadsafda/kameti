@@ -2,7 +2,7 @@
 
 import frappe
 
-from kameti.utils import common
+from kameti.utils import common, shares
 
 
 @frappe.whitelist(methods=["GET"])
@@ -58,7 +58,11 @@ def get_my_kametis():
 		# regardless of payment/recipient state. Only completed committees are
 		# excluded.
 		if c.cycle_state != "completed":
-			total_contributions += c.installment_amount or 0
+			# Their regular monthly contribution from the shares they hold
+			# (2 slots → 2×, half slot → 0.5×).
+			total_contributions += round(
+				float(c.installment_amount or 0) * shares.share_units(m.kameti, m.name)
+			)
 			contribution_count += 1
 
 		result.append({
